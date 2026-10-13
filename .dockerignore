@@ -1,0 +1,14 @@
+**
+!package.json
+!package-lock.json
+!tsconfig.json
+!next-env.d.ts
+!next.config.mjs
+!src/
+!src/**
+!deploy/
+!deploy/database.mjs
+!deploy/npm-cache/
+!deploy/npm-cache/**
+deploy/npm-cache/_logs/
+deploy/npm-cache/_update-notifier-last-checked

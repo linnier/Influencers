@@ -1,0 +1,19 @@
+{
+    admin off
+}
+
+{$SITE_DOMAIN} {
+    basic_auth {
+        {$ADMIN_USERNAME} {$ADMIN_PASSWORD_HASH}
+    }
+    header {
+        Strict-Transport-Security "max-age=31536000"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "same-origin"
+        -Server
+    }
+    encode gzip
+    reverse_proxy app:3000 {
+        header_up -Authorization
+    }
+}

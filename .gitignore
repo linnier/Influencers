@@ -1,0 +1,17 @@
+node_modules/
+.next/
+data/
+initial-data/
+*.tsbuildinfo
+.env*
+!.env.example
+coverage/
+backups/
+*.tar.gz
+*.zip
+lan-certificate/
+__pycache__/
+*.pyc
+deploy/npm-cache/_cacache/
+deploy/npm-cache/_logs/
+deploy/npm-cache/_update-notifier-last-checked
