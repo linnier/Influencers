@@ -43,7 +43,7 @@ test('production HTTP API, validation, associations and SQLite persistence', {ti
     await start();
     await t.test('empty workspace and rendered application page', async()=>{
       assert.deepEqual(await call('/api/workspace'),{influencers:[],projects:[],followups:[]});
-      const page=await fetch(origin);assert.equal(page.status,200);assert.match(await page.text(),/星桥/);
+      const page=await fetch(origin);assert.equal(page.status,200);assert.match(await page.text(),/itea达人库/);
     });
     await t.test('reject invalid fields, malformed JSON and cross-site writes', async()=>{
       for(const body of [{...base,name:''},{...base,followers:-1},{...base,followers:1.2},{...base,engagement:101},{...base,platform:'unknown'},{...base,quote:'100'},[]])

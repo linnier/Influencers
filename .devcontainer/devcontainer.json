@@ -1,10 +1,10 @@
 {
-  "name": "达人管理系统在线预览",
+  "name": "itea达人库在线预览",
   "image": "mcr.microsoft.com/devcontainers/javascript-node:1-24-bookworm",
   "forwardPorts": [3000],
   "portsAttributes": {
     "3000": {
-      "label": "达人管理系统",
+      "label": "itea达人库",
       "onAutoForward": "openBrowser",
       "protocol": "http"
     }

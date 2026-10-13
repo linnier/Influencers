@@ -1,4 +1,4 @@
-# 星桥 · 达人管理系统
+# itea达人库
 
 **自己在 Windows 电脑使用：下载 ZIP、完整解压、双击 `start-personal.cmd` 即可。** 首次联网准备完成后自动打开系统；不需要 Docker、虚拟机或云服务器。使用与导入名单步骤见 [个人版说明](deploy/PERSONAL.md)。
 

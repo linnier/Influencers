@@ -128,7 +128,7 @@ with tempfile.TemporaryDirectory(prefix='influencers-containers-', dir=os.enviro
         wrong='Basic '+b64encode(b'operator:invalid-test-password').decode()
         assert http('/api/workspace',True,custom_auth=wrong)[0]==401
         status,page,headers=http('/',True)
-        assert status==200 and '星桥' in page.decode()
+        assert status==200 and 'itea达人库' in page.decode()
         if not LAN_MODE:
             assert headers['Strict-Transport-Security']=='max-age=31536000'
         assert headers['X-Content-Type-Options']=='nosniff'

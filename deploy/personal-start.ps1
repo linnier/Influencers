@@ -41,7 +41,7 @@ function Test-PersonalServer {
     try {
         $health = Invoke-RestMethod -Uri "$address/api/health" -TimeoutSec 2
         $page = Invoke-WebRequest -UseBasicParsing -Uri $address -TimeoutSec 2
-        return $health.status -eq 'ok' -and $page.Content.Contains('星桥')
+        return $health.status -eq 'ok' -and $page.Content.Contains('itea达人库')
     } catch { return $false }
 }
 if (Test-PersonalServer) { Start-Process $address; Write-Host '系统已在运行，已打开浏览器。'; exit 0 }
