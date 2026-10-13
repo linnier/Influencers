@@ -1,5 +1,7 @@
 # 星桥 · 达人管理系统
 
+**自己在 Windows 电脑使用：下载 ZIP、完整解压、双击 `start-personal.cmd` 即可。** 首次联网准备完成后自动打开系统；不需要 Docker、虚拟机或云服务器。使用与导入名单步骤见 [个人版说明](deploy/PERSONAL.md)。
+
 中文达人管理后台初版，采用 Next.js App Router、React、TypeScript 和 SQLite。提供单人管理功能，暂不包含应用内登录、团队权限或平台数据抓取。服务器部署可使用统一的 HTTPS 与密码访问保护。
 
 服务器部署配置、HTTPS 与密码访问方案见 [部署说明](deploy/README.md)。公网访问保护由 Caddy 统一提供；应用自身仍为单人工作空间。尚未创建目标服务器或验证公网域名。

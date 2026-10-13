@@ -6,6 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
+import ExcelJS from 'exceljs';
+import JSZip from 'jszip';
 
 test('production HTTP API, validation, associations and SQLite persistence', {timeout:60000}, async t => {
   const directory = await mkdtemp(join(tmpdir(), 'influencers-api-'));
@@ -84,6 +86,39 @@ test('production HTTP API, validation, associations and SQLite persistence', {ti
       await call('/api/influencers/'+person.id,'DELETE',undefined,404);
       await call('/api/followups/'+followup.id,'DELETE',undefined,404);
       await call('/api/projects/'+project.id,'DELETE');assert.equal((await call('/api/workspace')).projects.length,0);
+    });
+    await t.test('Excel import merges real account identities, preserves notes, skips edited records and rolls back invalid batches', async()=>{
+      const workbook=new ExcelJS.Workbook();const sheet=workbook.addWorksheet('Instagram');
+      sheet.addRow(['序号','昵称','粉丝数','类型','主页','备注','联系']);
+      sheet.addRow([1,'账号甲',12000,'food','https://www.instagram.com/creator_a/reels/?share=transient','已合作 USD 300','contact-a@example.test']);
+      sheet.addRow([2,'账号甲旧名',13000,'生活','https://www.instagram.com/creator_a/','其他报价套餐','contact-old@example.test']);
+      sheet.addRow([3,'账号乙',20000,'fashion','https://www.instagram.com/creator_b/reels/','','']);
+      async function upload(book,headers={},expected=200) {
+        const zip=await JSZip.loadAsync(await book.xlsx.writeBuffer({useSharedStrings:true}));
+        const shared=zip.file('xl/sharedStrings.xml');
+        if(shared)zip.file('xl/sharedStrings.xml',(await shared.async('string')).replace('<si><t>账号甲</t></si>','<si><t></t><r><t>账号甲</t></r></si>'));
+        const form=new FormData();form.append('file',new Blob([await zip.generateAsync({type:'nodebuffer'})]),'博主清单.xlsx');
+        const response=await fetch(origin+'/api/import',{method:'POST',headers:{Origin:origin,...headers},body:form});
+        const value=await response.json();assert.equal(response.status,expected,JSON.stringify(value));return value;
+      }
+      await upload(workbook,{Origin:'https://untrusted.example'},403);
+      const result=await upload(workbook);
+      assert.deepEqual(result,{sourceRows:3,uniqueRecords:2,mergedDuplicateRows:1,inserted:2,skipped:0});
+      let stored=(await call('/api/workspace')).influencers;
+      assert.deepEqual(stored.map(item=>item.handle).sort(),['creator_a','creator_b']);
+      const first=stored.find(item=>item.handle==='creator_a');assert.equal(first.followers,12000);assert.equal(first.status,'已合作');
+      assert.match(first.notes,/USD 300/);assert.match(first.notes,/13000/);assert.match(first.contact,/contact-old/);assert.doesNotMatch(first.notes,/transient/);
+      await call('/api/influencers/'+first.id,'PUT',{...first,name:'手动编辑保留',quote:3000});
+      assert.equal((await upload(workbook)).skipped,2);
+      const invalid=new ExcelJS.Workbook();const other=invalid.addWorksheet('XHS');other.addRow(['序号','昵称','粉丝数','类型','主页','备注','联系']);
+      other.addRow([1,'不应部分导入',100,'生活','https://www.xiaohongshu.com/user/profile/new-valid','','']);
+      other.addRow([2,'字段过长应回滚',100,'生活','https://www.xiaohongshu.com/user/profile/new-invalid','x'.repeat(4001),'']);
+      await upload(invalid,{},400);
+      stored=(await call('/api/workspace')).influencers;assert.equal(stored.length,2);
+      assert.equal(stored.find(item=>item.id===first.id).name,'手动编辑保留');assert.equal(stored.find(item=>item.id===first.id).quote,3000);
+      const malformed=new FormData();malformed.append('file',new Blob(['bad archive']),'bad.xlsx');
+      assert.equal((await fetch(origin+'/api/import',{method:'POST',body:malformed})).status,400);
+      for(const item of stored)await call('/api/influencers/'+item.id,'DELETE');
     });
     await t.test('demo data is opt-in and cannot overwrite existing records', async()=>{
       const demo=await call('/api/demo','POST',{},201);assert.equal(demo.influencers.length,6);assert.equal(demo.projects.length,1);assert.equal(demo.followups.length,1);

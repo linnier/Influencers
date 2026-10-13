@@ -1,6 +1,7 @@
 node_modules/
 .next/
 .preview/
+.personal/
 data/
 initial-data/
 *.tsbuildinfo

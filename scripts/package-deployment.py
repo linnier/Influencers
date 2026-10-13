@@ -21,7 +21,7 @@ if not args.database.is_file():
 allowed = ['README.md', 'AGENTS.md', 'package.json', 'package-lock.json', 'tsconfig.json',
            'next-env.d.ts', 'next.config.mjs', 'Dockerfile', '.dockerignore', '.gitignore',
            'compose.yaml', 'compose.windows.yaml', '.env.example', 'src', 'tests', 'deploy', 'scripts',
-           'windows-start.cmd', 'windows-trust.cmd', 'windows-backup.cmd', 'windows-stop.cmd']
+           'windows-start.cmd', 'windows-trust.cmd', 'windows-backup.cmd', 'windows-stop.cmd', 'start-personal.cmd']
 args.output.parent.mkdir(parents=True, exist_ok=True)
 with tempfile.TemporaryDirectory(prefix='influencers-package-') as temporary:
     snapshot = Path(temporary) / 'influencers.sqlite'

@@ -1,5 +1,5 @@
 "use client";
-import { Children, cloneElement, isValidElement, useCallback, useEffect, useId, useState } from "react";
+import { Children, cloneElement, isValidElement, useCallback, useEffect, useId, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { PLATFORMS, CATEGORIES, INFLUENCER_STATUSES, PROJECT_STATUSES, CHANNELS } from "@/lib/types";
 import type { WorkspaceData, Influencer, Project } from "@/lib/types";
@@ -33,6 +33,7 @@ export default function Workspace() {
   const [view,setView]=useState<View>("overview"), [query,setQuery]=useState(""), [platform,setPlatform]=useState(""), [status,setStatus]=useState("");
   const [editor,setEditor]=useState<Editor>(null), [detail,setDetail]=useState<string|null>(null), [busy,setBusy]=useState(false), [formError,setFormError]=useState("");
   const [notice,setNotice]=useState(""), [deletion,setDeletion]=useState<{kind:"influencers"|"projects"|"followups";id:string;name:string}|null>(null);
+  const importInput=useRef<HTMLInputElement>(null);
   const refresh=useCallback(async()=> { try { const result=await request("/api/workspace"); setData(result); setLoadError(""); } catch(e) { setLoadError((e as Error).message); throw e; } finally {setLoading(false);} },[]);
   useEffect(()=>{ void refresh().catch(()=>{}); },[refresh]);
   useEffect(()=>{ if (!notice) return; const timer=setTimeout(()=>setNotice(""),4000); return ()=>clearTimeout(timer); },[notice]);
@@ -71,6 +72,18 @@ export default function Workspace() {
     const url=URL.createObjectURL(new Blob([influencersCSV(people)],{type:"text/csv;charset=utf-8"}));
     const link=document.createElement("a");link.href=url;link.download=`达人档案-${day}.csv`;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);setNotice(`已导出 ${people.length} 位达人的档案`);
   }
+  async function importExcel(file?:File) {
+    if(!file||busy)return;
+    setBusy(true);setFormError("");
+    try {
+      const form=new FormData();form.append("file",file);
+      const response=await fetch("/api/import",{method:"POST",body:form});
+      const result=await response.json();
+      if(!response.ok)throw new Error(result.error||"导入失败，请检查 Excel");
+      await refresh();setNotice(`导入完成：新增 ${result.inserted} 位达人，跳过 ${result.skipped} 位已有达人，合并 ${result.mergedDuplicateRows} 行重复记录`);
+    } catch(error) {setFormError((error as Error).message);}
+    finally {setBusy(false);if(importInput.current)importInput.current.value="";}
+  }
   const title=NAV.find(n=>n.id===view)!.label;
   const subtitle={overview:"连接好内容，让每一次合作都有迹可循。",influencers:"沉淀达人资源，找到下一位合适的合作伙伴。",projects:"从合作意向到项目落地，把进度握在手中。",followups:"记录每一次沟通，不错过下一步行动。"}[view];
   return <div className="app-shell">
@@ -84,7 +97,7 @@ export default function Workspace() {
     <div className="main-shell">
       <header className="topbar"><div className="breadcrumb">工作空间 <span>/</span> <b>{title}</b></div><div className="topbar-right"><span className="local-indicator"><i/>SQLite 本地存储</span><span className="avatar small">我</span></div></header>
       <main>
-        <div className="page-heading"><div><span className="eyebrow">{view==="overview"?"YOUR CREATOR NETWORK":"CREATOR MANAGEMENT"}</span><h1>{title}<span className="title-dot">.</span></h1><p>{subtitle}</p></div><div className="heading-actions">{view==="influencers"&&<button className="button secondary" onClick={exportCSV} disabled={loading||!!loadError||!people.length}><Icon name="download" size={17}/>导出 CSV</button>}<button className="button primary" onClick={newButton} disabled={loading||!!loadError}><Icon name="plus" size={18}/>{view==="projects"?"新建项目":view==="followups"?"添加跟进":"添加达人"}</button></div></div>
+        <div className="page-heading"><div><span className="eyebrow">{view==="overview"?"YOUR CREATOR NETWORK":"CREATOR MANAGEMENT"}</span><h1>{title}<span className="title-dot">.</span></h1><p>{subtitle}</p></div><div className="heading-actions">{view==="influencers"&&<><input ref={importInput} type="file" accept=".xlsx" hidden aria-label="导入 Excel 文件" onChange={event=>void importExcel(event.target.files?.[0])}/><button className="button secondary" onClick={()=>importInput.current?.click()} disabled={loading||!!loadError||busy}>{busy?"正在处理…":"导入 Excel"}</button><button className="button secondary" onClick={exportCSV} disabled={loading||!!loadError||!people.length}><Icon name="download" size={17}/>导出 CSV</button></>}<button className="button primary" onClick={newButton} disabled={loading||!!loadError||busy}><Icon name="plus" size={18}/>{view==="projects"?"新建项目":view==="followups"?"添加跟进":"添加达人"}</button></div></div>
         {notice&&<div className="toast" role="status"><Icon name="check" size={18}/>{notice}</div>}
         {loadError&&<div className="error-banner" role="alert">数据加载失败：{loadError}<button className="button secondary" onClick={()=>void refresh().catch(()=>{})}>重新加载</button></div>}
         {formError&&!editor&&!deletion&&<div className="error-banner" role="alert">{formError}<button className="icon-button" aria-label="关闭错误提示" onClick={()=>setFormError("")}><Icon name="close"/></button></div>}
