@@ -6,6 +6,14 @@
 
 只在 Windows 局域网使用，请参阅 [Windows 操作说明](deploy/WINDOWS.md)，无需购买服务器或域名。
 
+## 在线预览（无需本机安装）
+
+打开 [GitHub 云端启动入口](https://codespaces.new/linnier/Influencers?ref=codex%2Fwindows-lan-delivery)，登录能访问仓库的 GitHub 账号，确认分支为 `codex/windows-lan-delivery`，点击 **Create codespace**。账号需要具备可用的 Codespaces 权限和配额。
+
+云端会安装 Node.js 24 和依赖并启动应用。等待完成后，在 **Ports（端口）** 面板找到 `3000`，点击浏览器图标。保持端口可见性为 **Private**；此时 GitHub 登录保护预览访问。
+
+预览使用独立的 `.preview/influencers.sqlite`，不包含上传的 Excel 或 564 份真实名单。可以点击界面左下角 **体验演示数据** 查看功能。Codespace 停止时链接不可用；删除 Codespace 会丢失该预览的数据。该入口是创建云环境的链接，并非已经运行的系统网址。
+
 ## 已实现功能
 
 - 工作概览：达人数量、粉丝数之和（未去重）、执行项目数、计划预算、平台分布和到期跟进。
