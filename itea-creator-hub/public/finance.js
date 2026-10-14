@@ -32,8 +32,10 @@ function dataSummary(rows){
  const knownInteractions=rows.filter(p=>interactionValue(p)!==null);metrics.interactions={value:knownInteractions.length?knownInteractions.reduce((t,p)=>t+interactionValue(p),0):null,known:knownInteractions.length,total:rows.length};
  return {posts:rows.length,metrics};
 }
+function creatorSummary(state,rows){const data=dataSummary(rows),projects=new Map(state.projects.map(p=>[p.id,p])),collabs=new Map(state.collabs.map(c=>[c.id,c])),groups=[];const keys=[...new Set(rows.map(p=>p.currency||projects.get(collabs.get(p.collab)?.project)?.currency||''))];for(const currency of keys){const ps=rows.filter(p=>(p.currency||projects.get(collabs.get(p.collab)?.project)?.currency||'')===currency),priced=ps.filter(p=>isNumber(p.price)),expo=priced.filter(p=>isNumber(p.exposure)),eng=priced.filter(p=>interactionValue(p)!==null),ratio=(items,den,scale=1)=>{const d=items.reduce((t,p)=>t+den(p),0);return d>0?items.reduce((t,p)=>t+p.price,0)/d*scale:null;};groups.push({currency,price:priced.length?priced.reduce((t,p)=>t+p.price,0):null,priceKnown:priced.length,total:ps.length,cpm:ratio(expo,p=>p.exposure,1000),cpe:ratio(eng,interactionValue),cpmKnown:expo.length,cpeKnown:eng.length});}return {data,groups};}
+
 function dataHTML(rows,esc){const d=dataSummary(rows),labels=[['exposure','曝光量'],['views','阅读量'],['interactions','互动量']];
  return '<section class="panel"><h3>项目数据汇总</h3><p class="muted">当前筛选范围 · '+d.posts+'篇笔记；已录入的曝光和阅读包含投流时不再重复叠加投流数据。</p><div class="cards summary-cards">'+labels.map(([k,label])=>{const m=d.metrics[k];return '<div class="card">'+label+'<strong class="fee-value">'+esc(m.value===null?'未获取':m.value.toLocaleString('zh-CN'))+'</strong><small>'+m.known+' / '+m.total+'篇已填写'+(m.known<m.total?' · 部分数据待补全':'')+'</small></div>';}).join('')+'</div><p class="muted">每项只累计已填写数值，未知不当作0。互动量自动合计点赞、收藏、分享、评论；四项不完整时使用平台报告总数，每篇只计一次。阅读量为内容累加，不代表独立人数。切换项目、平台、达人或负责人后重新汇总。</p></section>';
 }
-root.FeeOverview={summarize,money,html,dataSummary,dataHTML,interactionValue};
+root.FeeOverview={summarize,money,html,dataSummary,dataHTML,interactionValue,creatorSummary};
 })(globalThis);

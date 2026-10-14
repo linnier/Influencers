@@ -32,7 +32,7 @@ function notify(s){$('msg').textContent=s}
 function selectStage(c){return '<select aria-label="'+esc(person(c.person).name)+'合作阶段" data-stage="'+esc(c.id)+'">'+stages.map(s=>'<option '+(s===c.stage?'selected':'')+'>'+s+'</option>').join('')+'</select>'}
 function rows(cs){return cs.map(c=>[esc(person(c.person).name)+'<small>'+esc(account(c.account).platform)+' · '+esc(account(c.account).handle)+'</small>',esc(project(c.project).name),selectStage(c),esc(c.owner),'<input aria-label="下次跟进日期" type="date" data-due="'+esc(c.id)+'" value="'+esc(c.due)+'">',posts.filter(p=>p.collab===c.id).length+' / '+c.target,esc(c.confirmed||(c.confirmedUnknown?'确认日期未知':'未确认'))])}
 function render(){
- const projectTabs=['项目管理','项目合作','已报名未合作','已合作达人','Post 数据','报名与Post录入','批量导入'];
+ const projectTabs=['项目管理','Post 数据','报名与Post录入','批量导入'];
  $('nav').innerHTML=['近期项目总览','达人库','项目管理','达人手动入库'].map(x=>'<button data-tab="'+x+'" class="'+(tab===x||(x==='项目管理'&&projectTabs.includes(tab))?'active':'')+'">'+x+'</button>').join('');
  if(!dataLoaded){$('main').innerHTML=loadError?'<section class="panel" role="alert"><h3>数据读取失败</h3><p>'+esc(loadError)+'</p><p class="muted">资料尚未载入，不能将它视为零条记录。修复后点击右上角刷新资料。</p></section>':'<section class="panel"><p>正在读取数据，请稍候…</p></section>';return}
  const cs=filtered(),ps=posts.filter(p=>cs.some(c=>c.id===p.collab)),active=cs.filter(c=>!end.includes(c.stage)),pub=ps.length,completePosts=ps.filter(complete),v=completePosts.reduce((s,p)=>s+p.views,0),it=completePosts.reduce((s,p)=>s+interaction(p),0);
@@ -83,6 +83,7 @@ function render(){
 $('project').innerHTML='<option value="">全部项目</option>'+options(projects,'id','name');
 document.addEventListener('invalid',()=>notify('请填写所有必填项，并检查输入格式。'),true);
 for(const id of ['query','platform','project','owner'])$(id).addEventListener(id==='query'?'input':'change',()=>{creatorPage=0;render()});
+$('project').addEventListener('change',()=>{if(tab==='项目管理'){ProjectWorkflow.created($('project').value);render();}});
 $('refreshButton').onclick=()=>{if(busy)return;loadData().then(()=>notify('已读取服务器最新资料。')).catch(e=>notify(e.message));};
 $('seedButton').onclick=()=>{if(busy)return;fill(JSON.parse(JSON.stringify(seed)));commit('演示数据已载入。');$('seedButton').hidden=true;};
 loadData().then(()=>{$('seedButton').hidden=backendMode==='lark'||people.length>0||projects.length>0;}).catch(e=>{notify(e.message);$('connection').textContent='连接失败';});
