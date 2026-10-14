@@ -1,0 +1,11 @@
+node_modules/
+.runtime/
+data/
+.upgrade-backups/
+.env
+.env.*
+*.sqlite*
+*.db
+*.xls
+*.xlsx
+.DS_Store

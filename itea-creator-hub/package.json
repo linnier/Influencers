@@ -1,0 +1,24 @@
+{
+  "name": "creator-collaboration-hub",
+  "version": "2.4.7",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "check": "node --check server.mjs && node --check client-check.js && node --check lark-store.mjs && node --check setup-local.mjs && node --check public/bulk-core.js && node --check public/bulk-ui.js && node --check public/finance.js && node --check public/creator-import.js && node --check public/project-workflow.js && node --check public/post-links.js && node --check public/multi-import.js",
+    "test": "node tests.mjs",
+    "test:lark": "node lark-tests.mjs",
+    "start:lan": "node setup-local.mjs",
+    "test:bulk": "node bulk-tests.mjs",
+    "test:update": "node update-tests.mjs",
+    "test:release": "node release-tests.mjs",
+    "test:multi": "node multi-tests.mjs",
+    "test:workflow": "node tests/workflow.cjs && node tests/account-binding-batches.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "26.1.0"
+  }
+}

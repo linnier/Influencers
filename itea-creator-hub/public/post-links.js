@@ -1,0 +1,6 @@
+(function(root){'use strict';
+function canonical(value){const u=new URL(String(value).trim());if(!['http:','https:'].includes(u.protocol)||u.username||u.password)throw Error('请填写有效的HTTP或HTTPS笔记链接');u.hash='';for(const key of [...u.searchParams.keys()])if(/^(utm_|xsec_|share_|source$)/i.test(key))u.searchParams.delete(key);return u.href.replace(/\/$/,'');}
+function identify(value,platform){const u=new URL(canonical(value));let m;if(platform==='小红书'&&/(^|\.)xiaohongshu\.com$/.test(u.hostname))m=u.pathname.match(/\/(?:explore|discovery\/item)\/([a-f\d]{24})(?:\/|$)/i);if(platform==='Instagram'&&/(^|\.)instagram\.com$/.test(u.hostname))m=u.pathname.match(/\/(?:p|reel|tv)\/([\w-]+)(?:\/|$)/);if(platform==='TikTok'&&/(^|\.)tiktok\.com$/.test(u.hostname))m=u.pathname.match(/\/video\/(\d+)(?:\/|$)/);return m?.[1]||'';}
+function duplicate(a,b,platform){if(a.platformId&&b.platformId&&a.platformId===b.platformId)return true;const aid=a.url?identify(a.url,platform):'',bid=b.url?identify(b.url,platform):'';if(aid&&(aid===b.platformId||aid===bid)||bid&&bid===a.platformId)return true;return !!(a.url&&b.url&&canonical(a.url)===canonical(b.url));}
+root.PostLinks={canonical,identify,duplicate};
+})(globalThis);
