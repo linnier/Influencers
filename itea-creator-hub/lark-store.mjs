@@ -18,13 +18,13 @@ const equivalent=(prop,a,b)=>['confirmedUnknown','dateUnknown'].includes(prop)?(
 function revisionFor(snapshot){return createHash('sha256').update(JSON.stringify(Object.keys(shape).map(k=>[k,snapshot.fields[k],snapshot.records[k].map(r=>[r.record_id,r.fields]).sort((a,b)=>a[0].localeCompare(b[0]))]))).digest('hex')}
 export class LarkStore{
  constructor({appId,appSecret,baseToken,sourceUrl,memberMap={},fetchImpl=fetch}){this.config={appId,appSecret,baseToken,sourceUrl};this.fetch=fetchImpl;this.memberMap=memberMap;this.token=null;this.tokenUntil=0;this.tokenFlight=null;this.writeQueue=Promise.resolve();}
- status(){const missing=[];if(!this.config.appId)missing.push('LARK_APP_ID');if(!this.config.appSecret)missing.push('LARK_APP_SECRET');if(!this.config.baseToken&&!this.config.sourceUrl)missing.push('LARK_BASE_TOKEN 或 LARK_SOURCE_URL');return {mode:'lark',configured:missing.length===0,missing,liveVerified:false,build:'2.4.15',automaticWriteBatches:true}}
+ status(){const missing=[];if(!this.config.appId)missing.push('LARK_APP_ID');if(!this.config.appSecret)missing.push('LARK_APP_SECRET');if(!this.config.baseToken&&!this.config.sourceUrl)missing.push('LARK_BASE_TOKEN 或 LARK_SOURCE_URL');return {mode:'lark',configured:missing.length===0,missing,liveVerified:false,build:'2.4.16',automaticWriteBatches:true}}
  async request(path,{method='GET',body}={}){
   if(!path.startsWith('/open-apis/'))throw new LarkError('不允许的接口路径',400);
   const token=await this.auth();let response;try{response=await this.fetch('https://open.larksuite.com'+path,{method,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal:AbortSignal.timeout(20000),redirect:'error'})}catch{throw new LarkError(method==='GET'?'Lark读取超时或网络不可达，请检查连接':'Lark写入结果未知，请刷新核查后再操作，勿重复提交')}
   if(response.status===429)throw new LarkError('Lark接口频率受限，请稍后刷新；本次未自动重试',429);
   let data;try{data=await response.json()}catch{throw new LarkError('Lark返回了无法解析的响应')}
-  if(!response.ok||data.code!==0){if([99991661,99991663,99991664,99991668].includes(data.code)){this.token=null;throw new LarkError('Lark授权令牌无效，请刷新后重试',401)}throw new LarkError('Lark接口失败（'+(data.code??response.status)+'）；请核查应用API权限、发布状态和Base访问授权')}
+  if(!response.ok||data.code!==0){if([99991661,99991663,99991664,99991668].includes(data.code)){this.token=null;throw new LarkError('Lark授权令牌无效，请刷新后重试',401)}if([1254000,1254001,1254010].includes(data.code))throw new LarkError('Lark请求参数错误（'+data.code+'），请更新程序后重试；此错误不代表邮箱或Base权限不足',400);throw new LarkError('Lark接口失败（'+(data.code??response.status)+'）；请核查应用API权限、发布状态和Base访问授权')}
   return data.data;
  }
  async auth(){if(this.token&&Date.now()<this.tokenUntil)return this.token;if(this.tokenFlight)return this.tokenFlight;this.tokenFlight=this.getToken();try{return await this.tokenFlight}finally{this.tokenFlight=null}}

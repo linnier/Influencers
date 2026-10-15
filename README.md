@@ -1,9 +1,9 @@
 # Influencers
 
-itea 创作者管理网站，当前源码版本 **2.4.15**。支持小红书、Instagram、TikTok，业务数据通过 Lark Base 保存。
+itea 创作者管理网站，当前源码版本 **2.4.16**。支持小红书、Instagram、TikTok，业务数据通过 Lark Base 保存。
 
 - [完整网站源码](itea-creator-hub)
-- [2.4.15 累计升级包](releases/itea-creator-hub-upgrade-2.4.15.zip)
+- [2.4.16 累计升级包](releases/itea-creator-hub-upgrade-2.4.16.zip)
 - [安装与升级说明](releases/README.md)
 
 ## Render 免费试部署
@@ -54,3 +54,10 @@ npm run test:creator
 [上线及 Lark 邮箱授权说明](docs/lark-mail-launch.md)。支持平台／粉丝筛选、逐人邮件确认、collab@itea.sg 用户 OAuth、专属及公开报名表、匹配审核入库、按达人导出 CSV 和人工发券登记。itea账号即领券账号，WhatsApp／微信独立保存。邀请、报名、发券和加密授权存入 Lark Base。Render Free 通过 HTTPS Mail API 发信，不使用被阻止的 SMTP 端口。未代用户发送真实邮件或操作 Render。
 
 代码推送后仍需在 Render **Manual Deploy → Deploy latest commit**，随后在 Lark 应用添加邮件用户权限及回调 URL 并由 collab@itea.sg 完成授权。运行 `npm run test:invites` 验证正式接口与交互闭环；使用虚构数据和模拟邮件接口。
+
+## 2.4.16 建表修复
+
+修复首次点击“启用邀约与报名”时的 `1254001`：Lark 要求指定默认视图名称时必须同时提供初始字段，本版随建表请求提交“工作流ID”和“数据”两个文本字段。已有同名表只补缺失字段，不重复建表。请求格式错误会明确提示参数问题，不再一律提示权限不足。此修补不发送邮件，也不修改原有达人、合作或 Post 记录。
+
+更新方式：Render → Manual Deploy → Deploy latest commit，等待 Live 后刷新网站，再点“启用邀约与报名”。可在 `/api/connection` 核对 build 为 `2.4.16`。如果后续出现新的权限错误，再按具体错误开通对应权限。
+

@@ -1,10 +1,8 @@
-# 2.4.15 达人邀约与报名
+# 2.4.16 首次启用工作流修复
 
-[下载累计升级包](itea-creator-hub-upgrade-2.4.15.zip) · [Render部署及邮箱授权步骤](../docs/lark-mail-launch.md)
+[下载累计升级包](itea-creator-hub-upgrade-2.4.16.zip) · [Render 部署及邮箱设置](../docs/lark-mail-launch.md)
 
-itea创作者管理 2.4.15 达人邀约与报名
-
-# 2.4.15：上线达人邀约、报名审核与人工发券登记
+# 2.4.16：上线达人邀约、报名审核与人工发券登记
 
 正式网址：https://itea-creator-manager.onrender.com
 
@@ -15,7 +13,7 @@ itea创作者管理 2.4.15 达人邀约与报名
 1. Render → `itea-creator-manager` → **Manual Deploy → Deploy latest commit**。
 2. 等待 **Live**，打开网站，用原 `team` 账号密码登录。
 3. 已有 `LARK_APP_ID`、`LARK_APP_SECRET`、`LARK_SOURCE_URL`、`TEAM_PASSWORD` 保持原配置。本版自动使用 Render 提供的 `RENDER_EXTERNAL_URL` 作为正式网址；使用自定义域名时另设 `PUBLIC_BASE_URL` 为该 HTTPS 域名，不带结尾斜杠。
-4. 在网站打开 `/api/connection`，确认 `build` 是 **2.4.15**。该接口仅说明配置齐全，真实读取以项目页面为准。
+4. 在网站打开 `/api/connection`，确认 `build` 是 **2.4.16**。该接口仅说明配置齐全，真实读取以项目页面为准。
 
 ## 2. 给原 Lark 应用添加权限
 
@@ -75,7 +73,11 @@ Render 免费服务阻止常用 SMTP 端口 25、465、587，本版通过 HTTPS 
 
 参考：[Render 免费限制](https://render.com/docs/free)、[Lark Mail SDK 接口定义](https://github.com/larksuite/oapi-sdk-go/blob/v3_main/service/mail/v1/resource.go)。
 
+## 2.4.16 建表修复
 
-Windows升级：停止网站，解压本包，进入含install-update.mjs的内层目录，运行node install-update.mjs并填写原itea-creator-hub路径；完成后回原目录运行node setup-local.mjs。保留.runtime和业务数据，原代码备份可通过restore.mjs回滚。邮件授权及公开报名请使用固定HTTPS云端地址。升级文件不包含密码、密钥或实际达人资料。
+修复首次点击“启用邀约与报名”时的 `1254001`：Lark 要求指定默认视图名称时必须同时提供初始字段，本版随建表请求提交“工作流ID”和“数据”两个文本字段。已有同名表只补缺失字段，不重复建表。请求格式错误会明确提示参数问题，不再一律提示权限不足。此修补不发送邮件，也不修改原有达人、合作或 Post 记录。
 
-SHA256: d4f011d1bc57c09bd4b42b52e3b2046844c56f50edd4f89d7a94e087605e2f5b
+更新方式：Render → Manual Deploy → Deploy latest commit，等待 Live 后刷新网站，再点“启用邀约与报名”。可在 `/api/connection` 核对 build 为 `2.4.16`。如果后续出现新的权限错误，再按具体错误开通对应权限。
+
+
+SHA256: dfc802c0e3b284b834c6bc13d4e95339268a1739961f6160e77bf790bbce00e4
