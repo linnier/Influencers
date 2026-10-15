@@ -65,6 +65,7 @@ function plan(input,state,opts,newId){
  // All rows are checked before writes; any error blocks this plan in full.
  return {state:s,errors,results,actions};
 }
+function applyActions(base,actions){const s=JSON.parse(JSON.stringify(base));for(const a of actions){const at=s[a.key].findIndex(r=>r.id===a.obj.id),obj=JSON.parse(JSON.stringify(a.obj));if(at<0)s[a.key].push(obj);else s[a.key][at]=obj;}return s;}
 function batches(base,actions,size=20){const s=JSON.parse(JSON.stringify(base));const out=[];for(let i=0;i<actions.length;i+=size){for(const a of actions.slice(i,i+size))s[a.key].push(JSON.parse(JSON.stringify(a.obj)));out.push(JSON.parse(JSON.stringify(s)));}return out;}
-root.BulkImport={normalizeWorkbook,currency,readWorkbook,plan,batches,number,link,xhsId,goodDate};
+root.BulkImport={normalizeWorkbook,currency,readWorkbook,plan,batches,applyActions,number,link,xhsId,goodDate};
 })(globalThis);
