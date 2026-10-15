@@ -1,6 +1,6 @@
 {
   "name": "creator-collaboration-hub",
-  "version": "2.4.10",
+  "version": "2.4.11",
   "private": true,
   "type": "module",
   "engines": {
@@ -17,7 +17,8 @@
     "test:release": "node release-tests.mjs",
     "test:multi": "node multi-tests.mjs",
     "test:workflow": "node tests/workflow.cjs && node tests/account-binding-batches.cjs",
-    "test:creator": "node creator-summary-tests.mjs"
+    "test:creator": "node creator-summary-tests.mjs",
+    "test:bulk-ui": "node tests/bulk-single.cjs"
   },
   "devDependencies": {
     "jsdom": "26.1.0"
