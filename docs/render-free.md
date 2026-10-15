@@ -1,6 +1,6 @@
 # Render 免费试部署
 
-部署当前2.4.17网站到独立Render Free服务，继续连接原Lark Base。内网服务可继续运行；未完成的原导入页不要刷新、关闭或搬到新网址。先在云端核对读取结果，完成试用后再修改Lark应用入口。
+部署当前2.4.18网站到独立Render Free服务，继续连接原Lark Base。内网服务可继续运行；未完成的原导入页不要刷新、关闭或搬到新网址。先在云端核对读取结果，完成试用后再修改Lark应用入口。
 
 ## 注册和创建
 
@@ -26,7 +26,7 @@ App ID和Secret可在Lark开发者后台“凭证与基础信息”查看。原�
 ## 部署后的检查
 
 1. 打开Render给出的HTTPS网址，用team和设置的密码登录。
-2. 打开该网址下的 `/api/connection`，应显示 `mode: lark`、`configured: true`、`build: 2.4.17`。这只代表配置齐全，不代表真实Base读取已经通过。
+2. 打开该网址下的 `/api/connection`，应显示 `mode: lark`、`configured: true`、`build: 2.4.18`。这只代表配置齐全，不代表真实Base读取已经通过。
 3. 返回首页，确认能读取现有项目。进入十五周年庆，在全部平台、全部负责人筛选下核对人数和Post，先不新增或修改真实数据。
 4. 让一位外网同事打开同一HTTPS网址并登录，核对能看到相同数据。
 5. 读取验证通过后，将Lark开发者后台网页应用的桌面端、移动端主页改为该HTTPS网址，保存并发布版本。保留已使用的浏览器打开配置。网站目前仍为团队密码登录，尚未接入Lark身份免登录。
@@ -65,18 +65,20 @@ Render → New → Web Service，选择 `linnier/Influencers`，填写：
 
 ## Lark 邮箱邀约与报名
 
-2.4.17新增正式工作流，按 [邮箱上线说明](lark-mail-launch.md) 配置邮件用户权限和回调地址，再在项目的“邀约与报名”中启用并授权 collab@itea.sg。不能使用应用 tenant_access_token 代替邮箱用户授权。Render 免费实例不支持常用 SMTP 端口，本版使用 HTTPS Mail API。
+2.4.18新增正式工作流，按 [邮箱上线说明](lark-mail-launch.md) 配置邮件用户权限和回调地址，再在项目的“邀约与报名”中启用并授权 collab@itea.sg。不能使用应用 tenant_access_token 代替邮箱用户授权。Render 免费实例不支持常用 SMTP 端口，本版使用 HTTPS Mail API。
 
-## 2.4.17 建表修复
+## 2.4.18 建表修复
 
 修复首次点击“启用邀约与报名”时的 `1254001`：Lark 要求指定默认视图名称时必须同时提供初始字段，本版随建表请求提交“工作流ID”和“数据”两个文本字段。已有同名表只补缺失字段，不重复建表。请求格式错误会明确提示参数问题，不再一律提示权限不足。此修补不发送邮件，也不修改原有达人、合作或 Post 记录。
 
-更新方式：Render → Manual Deploy → Deploy latest commit，等待 Live 后刷新网站，再点“启用邀约与报名”。可在 `/api/connection` 核对 build 为 `2.4.17`。如果后续出现新的权限错误，再按具体错误开通对应权限。
+更新方式：Render → Manual Deploy → Deploy latest commit，等待 Live 后刷新网站，再点“启用邀约与报名”。可在 `/api/connection` 核对 build 为 `2.4.18`。如果后续出现新的权限错误，再按具体错误开通对应权限。
 
 
 
-## 2.4.17 空工作流表读取修复
+## 2.4.18 空工作流表读取修复
 
 兼容 Lark 成功响应在 total=0 或 has_more=false 时省略／置空 items 的格式，按零条记录读取。空白占位行不当作业务记录。非空、仍有下一页或结构错误的响应继续报错，保留分页完整性检查。新增表创建、空表读取、部分字段补齐、已有分页和报名审核交互均有离线回归测试；真实 Lark 的结果以部署后验证为准。
 
-更新：Render → Manual Deploy → Deploy latest commit，等待 Live 后刷新页面并点“重新读取”。工作流表已存在时会直接进入邀约界面，无需重复建表。/api/connection 中 build 应为 2.4.17。此修补不修改达人、合作、Post 或已保存工作流记录。
+更新：Render → Manual Deploy → Deploy latest commit，等待 Live 后刷新页面并点“重新读取”。工作流表已存在时会直接进入邀约界面，无需重复建表。/api/connection 中 build 应为 2.4.18。此修补不修改达人、合作、Post 或已保存工作流记录。
+
+共享邮箱由有权限使用它的个人Lark账号完成授权。回调地址和已开通的邮件权限不变。详见 [共享邮箱设置](lark-mail-launch.md)。

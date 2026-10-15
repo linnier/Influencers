@@ -1,12 +1,12 @@
-# 2.4.17 空工作流表读取修复
+# 2.4.18 团队共享邮箱授权
 
-[下载累计升级包](itea-creator-hub-upgrade-2.4.17.zip) · [Render部署及邮箱设置](../docs/lark-mail-launch.md)
+[下载累计升级包](itea-creator-hub-upgrade-2.4.18.zip) · [Render部署及共享邮箱设置](../docs/lark-mail-launch.md)
 
 
-## 2.4.17 空工作流表读取修复
+## 2.4.18 团队共享邮箱
 
-兼容 Lark 成功响应在 total=0 或 has_more=false 时省略／置空 items 的格式，按零条记录读取。空白占位行不当作业务记录。非空、仍有下一页或结构错误的响应继续报错，保留分页完整性检查。新增表创建、空表读取、部分字段补齐、已有分页和报名审核交互均有离线回归测试；真实 Lark 的结果以部署后验证为准。
+允许有权使用 collab@itea.sg 共享邮箱的个人Lark账号授权。通过 accessible_mailboxes 精确核对目标公共邮箱；草稿、发送、投递查询均明确使用该邮箱，From 固定为 collab@itea.sg。无成员权限或返回邮件群组时拒绝新授权；不会改用个人邮箱发信。原主邮箱直接授权继续支持，现有邮件权限、offline_access 和回调地址可沿用。界面显示“共享邮箱已授权”。
 
-更新：Render → Manual Deploy → Deploy latest commit，等待 Live 后刷新页面并点“重新读取”。工作流表已存在时会直接进入邀约界面，无需重复建表。/api/connection 中 build 应为 2.4.17。此修补不修改达人、合作、Post 或已保存工作流记录。
+更新后在网站重新点击连接邮箱，使用自己的Lark账号完成授权。详见 [邮箱设置说明](../docs/lark-mail-launch.md)。`npm run test:mail`验证共享邮箱边界及主邮箱兼容；邮件接口测试为模拟，不代表已向达人发信。
 
-SHA256: 0595725f5039df85b100ee855c365d37b5f637047cfde25ca5cf2d5b632e1d45
+SHA256: e012d80f0d6cab8b2005e2555fbe9c6ff9b44b7e4f382d748a7699e5e8e2dc58

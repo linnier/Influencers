@@ -1,6 +1,6 @@
 {
   "name": "creator-collaboration-hub",
-  "version": "2.4.17",
+  "version": "2.4.18",
   "private": true,
   "type": "module",
   "engines": {
@@ -22,7 +22,8 @@
     "test:batch": "node tests/bulk-canonical.cjs && node tests/bulk-drafts.cjs",
     "test:render": "node render-smoke-tests.mjs",
     "test:login": "node login-tests.mjs",
-    "test:invites": "node workflow-tests.mjs && node invite-ui-tests.mjs"
+    "test:invites": "node workflow-tests.mjs && node mail-shared-tests.mjs && node invite-ui-tests.mjs",
+    "test:mail": "node mail-shared-tests.mjs"
   },
   "devDependencies": {
     "jsdom": "26.1.0"
