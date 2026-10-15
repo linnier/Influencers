@@ -13,13 +13,14 @@ async function check(configured){
  try{
   const port=await new Promise((ok,fail)=>{const timeout=setTimeout(()=>fail(Error('Cloud-style startup timed out')),10000);child.stdout.on('data',b=>{const m=String(b).match(/listening on http:\/\/0\.0\.0\.0:(\d+)/);if(m){clearTimeout(timeout);ok(Number(m[1]));}});child.once('error',e=>{clearTimeout(timeout);fail(e)});child.once('exit',code=>{clearTimeout(timeout);fail(Error('Server exited '+code+': '+errorText))});});
   const url='http://127.0.0.1:'+port;
-  const headers={Authorization:'Basic '+Buffer.from('team:'+testPassword).toString('base64')};
+  let headers={Authorization:'Basic '+Buffer.from('team:'+testPassword).toString('base64')};
   let r=await fetch(url+'/health');assert.equal(r.status,200);assert.deepEqual(await r.json(),{ok:true});
-  r=await fetch(url+'/');assert.equal(r.status,401);
+  r=await fetch(url+'/',{redirect:'manual'});assert.equal(r.status,303);assert.equal(r.headers.get('location'),'/login');
   r=await fetch(url+'/api/connection');assert.equal(r.status,401);
+  r=await fetch(url+'/auth/login',{method:'POST',headers:{Origin:url,'Content-Type':'application/json'},body:JSON.stringify({username:'team',password:testPassword})});assert.equal(r.status,200);headers={Cookie:r.headers.getSetCookie().map(c=>c.split(';')[0]).join('; ')};
   r=await fetch(url+'/',{headers});assert.equal(r.status,200);assert((await r.text()).includes('project-workflow.js'));
   r=await fetch(url+'/project-workflow.js',{headers});assert.equal(r.status,200);assert((await r.text()).includes('ProjectWorkflow'));
-  r=await fetch(url+'/api/connection',{headers});const connection=await r.json();assert.equal(connection.mode,'lark');assert.equal(connection.configured,configured);assert.equal(connection.build,'2.4.13');assert.equal(connection.automaticWriteBatches,true);assert(!JSON.stringify(connection).includes('SYNTHETIC_SECRET'));
+  r=await fetch(url+'/api/connection',{headers});const connection=await r.json();assert.equal(connection.mode,'lark');assert.equal(connection.configured,configured);assert.equal(connection.build,'2.4.14');assert.equal(connection.automaticWriteBatches,true);assert(!JSON.stringify(connection).includes('SYNTHETIC_SECRET'));
   if(!configured){r=await fetch(url+'/api/state',{headers});assert.equal(r.status,503);assert((await r.json()).error.includes('尚未配置'));}
  }finally{
   const exit=new Promise(r=>child.once('exit',r));if(child.exitCode===null){child.kill('SIGTERM');await exit;}rmSync(dir,{recursive:true,force:true});

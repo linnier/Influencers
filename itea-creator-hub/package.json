@@ -1,6 +1,6 @@
 {
   "name": "creator-collaboration-hub",
-  "version": "2.4.13",
+  "version": "2.4.14",
   "private": true,
   "type": "module",
   "engines": {
@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "check": "node --check server.mjs && node --check client-check.js && node --check lark-store.mjs && node --check setup-local.mjs && node --check public/bulk-core.js && node --check public/bulk-ui.js && node --check public/finance.js && node --check public/creator-import.js && node --check public/project-workflow.js && node --check public/post-links.js && node --check public/multi-import.js",
+    "check": "node --check server.mjs && node --check client-check.js && node --check lark-store.mjs && node --check setup-local.mjs && node --check public/bulk-core.js && node --check public/bulk-ui.js && node --check public/finance.js && node --check public/creator-import.js && node --check public/project-workflow.js && node --check public/post-links.js && node --check public/multi-import.js && node --check auth.mjs && node --check public/login.js",
     "test": "node tests.mjs",
     "test:lark": "node lark-tests.mjs",
     "start:lan": "node setup-local.mjs",
@@ -20,7 +20,8 @@
     "test:creator": "node creator-summary-tests.mjs",
     "test:bulk-ui": "node tests/bulk-single.cjs",
     "test:batch": "node tests/bulk-canonical.cjs && node tests/bulk-drafts.cjs",
-    "test:render": "node render-smoke-tests.mjs"
+    "test:render": "node render-smoke-tests.mjs",
+    "test:login": "node login-tests.mjs"
   },
   "devDependencies": {
     "jsdom": "26.1.0"

@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import {spawn} from 'node:child_process';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {resolve,dirname,join} from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {Readable} from 'node:stream';
+import {createTeamAuth} from './auth.mjs';
+const root=dirname(fileURLToPath(import.meta.url)),password='SYNTHETIC_LOGIN_TEST_PASSWORD_ONLY',dir=mkdtempSync(join(tmpdir(),'creator-login-test-'));
+const child=spawn(process.execPath,[resolve(root,'server.mjs')],{cwd:root,env:{...process.env,HOST:'127.0.0.1',PORT:'0',DATA_BACKEND:'sqlite',DATA_DIR:dir,TEAM_PASSWORD:password,RENDER:'',RENDER_EXTERNAL_URL:''},stdio:['ignore','pipe','pipe']});
+let stderr='';child.stderr.on('data',b=>stderr+=b);
+try{
+ const base=await new Promise((ok,fail)=>{let output='';const timer=setTimeout(()=>fail(Error('Server startup timeout: '+stderr)),10000);child.stdout.on('data',b=>{output+=b;const m=output.match(/http:\/\/127\.0\.0\.1:\d+/);if(m){clearTimeout(timer);ok(m[0])}});child.once('exit',code=>{clearTimeout(timer);fail(Error('Server exit '+code+': '+stderr))});child.once('error',fail)});
+ let r=await fetch(base+'/',{redirect:'manual'});assert.equal(r.status,303);assert.equal(r.headers.get('location'),'/login');assert.equal(r.headers.get('www-authenticate'),null);
+ r=await fetch(base+'/login');assert.equal(r.status,200);const html=await r.text();assert(html.includes('欢迎登录'));assert(html.includes('autocomplete="current-password"'));assert(!html.includes(password));assert(r.headers.get('content-security-policy').includes("frame-ancestors 'none'"));const mode=r.headers.getSetCookie()[0].split(';')[0];
+ r=await fetch(base+'/api/state');assert.equal(r.status,401);assert.equal(r.headers.get('www-authenticate'),null);
+ const login=(u,p,origin=base,cookie=mode)=>fetch(base+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json',Origin:origin,Cookie:cookie},body:JSON.stringify({username:u,password:p}),redirect:'manual'});
+ r=await login('team',password,'https://outside.example');assert.equal(r.status,403);
+ r=await login('team','wrong');assert.equal(r.status,401);assert((await r.json()).error.includes('账号或密码不正确'));
+ r=await login('team',password);assert.equal(r.status,200);const set=r.headers.getSetCookie();assert(set.some(c=>c.includes('HttpOnly')&&c.includes('SameSite=Lax')&&c.includes('Max-Age=43200')));const session=set.find(c=>c.startsWith('itea_session=')).split(';')[0],cookies=session+'; '+mode;
+ r=await fetch(base+'/',{headers:{Cookie:cookies}});assert.equal(r.status,200);assert((await r.text()).includes('退出登录'));
+ r=await fetch(base+'/project-workflow.js',{headers:{Cookie:cookies}});assert.equal(r.status,200);
+ r=await fetch(base+'/api/state',{headers:{Cookie:cookies}});assert.equal(r.status,200);assert.equal((await r.json()).state.people.length,0);
+ r=await fetch(base+'/api/state',{headers:{Cookie:session+'tampered'}});assert.equal(r.status,401);
+ const basic='Basic '+Buffer.from('team:'+password).toString('base64');r=await fetch(base+'/api/state',{headers:{Authorization:basic}});assert.equal(r.status,200);r=await fetch(base+'/api/state',{headers:{Authorization:basic,Cookie:mode}});assert.equal(r.status,401);
+ r=await fetch(base+'/auth/logout',{method:'POST',headers:{Origin:'https://outside.example',Cookie:cookies},redirect:'manual'});assert.equal(r.status,403);
+ r=await fetch(base+'/auth/logout',{method:'POST',headers:{Origin:base,Cookie:cookies},redirect:'manual'});assert.equal(r.status,303);assert.equal(r.headers.get('location'),'/login');assert(r.headers.getSetCookie().some(c=>c.startsWith('itea_session=;')&&c.includes('Max-Age=0')));
+ r=await fetch(base+'/api/state',{headers:{Cookie:cookies}});assert.equal(r.status,401);
+ r=await fetch(base+'/auth/logout');assert.equal(r.status,405);
+ for(let i=0;i<10;i++)await login('team','wrong');r=await login('team',password);assert.equal(r.status,429);assert(r.headers.get('retry-after'));
+ let clock=1000000;const factory=p=>createTeamAuth({password:p,secureCookies:true,now:()=>clock}),auth=factory(password);
+ const req=Readable.from([Buffer.from(JSON.stringify({username:'team',password}))]);req.method='POST';req.headers={'content-type':'application/json',origin:'https://creator.example',host:'creator.example'};req.socket={remoteAddress:'127.0.0.1'};let headers;const res={writeHead(status,h){assert.equal(status,200);headers=h;},end(){}};await auth.handle(req,res,'/auth/login');const secure=headers['Set-Cookie'].find(c=>c.startsWith('itea_session='));assert(secure.includes('; Secure'));const cookie={headers:{cookie:secure.split(';')[0]}};assert(auth.session(cookie));assert(factory(password).session(cookie),'session survives free-instance restart with same password');assert.equal(factory('changed-password-is-at-least-16').session(cookie),null);clock+=12*60*60*1000;assert.equal(auth.session(cookie),null);
+ console.log('PASS form login: page and API protection, same-origin login/logout, generic errors, opaque HttpOnly cookie, logout revocation, tamper/expiry/password-change rejection, restart continuity, rate limit and old API compatibility.');
+}finally{const exited=new Promise(r=>child.once('exit',r));if(child.exitCode===null){child.kill('SIGTERM');await exited;}rmSync(dir,{recursive:true,force:true});}

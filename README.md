@@ -1,9 +1,9 @@
 # Influencers
 
-itea 创作者管理网站，当前源码版本 **2.4.13**。支持小红书、Instagram、TikTok，业务数据通过 Lark Base 保存。
+itea 创作者管理网站，当前源码版本 **2.4.14**。支持小红书、Instagram、TikTok，业务数据通过 Lark Base 保存。
 
 - [完整网站源码](itea-creator-hub)
-- [2.4.13 累计升级包](releases/itea-creator-hub-upgrade-2.4.13.zip)
+- [2.4.14 累计升级包](releases/itea-creator-hub-upgrade-2.4.14.zip)
 - [安装与升级说明](releases/README.md)
 
 ## Render 免费试部署
@@ -12,7 +12,7 @@ itea 创作者管理网站，当前源码版本 **2.4.13**。支持小红书、I
 
 根目录 render.yaml 预设一个新加坡Free Web Service，运行本仓库2.4.13源码，继续使用原Lark Base。首次需要在Render填写团队密码、Lark App ID、App Secret和Base/wiki完整链接。密钥只在Render设置，不提交到仓库。当前配置关闭代码推送自动部署，后续在Render手动部署最新版，避免打断导入。
 
-尚未创建实际Render服务。当前内网导入页仍有匹配时，保持原页，不刷新、不迁移到新网址。云端先验证读取，再修改Lark应用入口。
+Render已部署为 https://itea-creator-manager.onrender.com ，代码更新后需手动Deploy latest commit。当前内网导入页仍有匹配时，保持原页，不刷新、不迁移到新网址。云端先验证读取，再修改Lark应用入口。
 
 项目列表 → 进入项目 → 合作管理 / Post数据 / 达人效果 / 项目总览。报名与合作状态筛选放在合作管理中，已有Post的达人显示在达人效果中。
 
@@ -44,3 +44,7 @@ npm run test:creator
 
 2.4.13 将服务器整次20项拒绝改为服务器自动分组顺序写入，先校验全部字段与关联，保留版本冲突、2500项上限与失败停止保护。兼容仍打开的旧导入页，保留匹配草稿与发券汇总功能。当前页仍有匹配时不要刷新，按升级说明先重启后台，在原页继续导入，成功后再刷新。
 
+
+2.4.14增加网站内账号密码登录及退出，账号team与原TEAM_PASSWORD保持一致。访问/login查看新页面。`npm run test:login`验证会话及登录流程。
+
+[交互原型HTML](previews/itea-workflow.html)：登录、项目内达人筛选、collab@itea.sg邀约预览、报名匹配审核、导出名单及人工发券登记。此原型使用虚构数据，不会真实发送邮件或修改Lark，尚未接入生产业务接口。

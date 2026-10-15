@@ -5,11 +5,12 @@ import {DatabaseSync} from 'node:sqlite';
 import {mkdirSync,readFileSync} from 'node:fs';
 import {resolve,dirname} from 'node:path';
 import {fileURLToPath} from 'node:url';
-import {timingSafeEqual} from 'node:crypto';
+import {createTeamAuth} from './auth.mjs';
 const root=dirname(fileURLToPath(import.meta.url));
 const host=process.env.HOST||'127.0.0.1',port=Number(process.env.PORT||3000);
 const password=process.env.TEAM_PASSWORD||'';
 if(!['127.0.0.1','localhost','::1'].includes(host)&&password.length<16)throw Error('对外访问必须配置至少16位TEAM_PASSWORD，使用HTTPS反向代理。');
+const auth=createTeamAuth({password,secureCookies:process.env.RENDER==='true'||process.env.RENDER_EXTERNAL_URL?.startsWith('https://')===true});
 const mode=process.env.DATA_BACKEND||'sqlite';
 if(!['sqlite','lark'].includes(mode))throw Error('DATA_BACKEND必须为sqlite或lark');
 const lark=mode==='lark'?configuredLark():null;
@@ -17,7 +18,8 @@ const dataDir=resolve(process.env.DATA_DIR||resolve(root,'data'));mkdirSync(data
 const db=new DatabaseSync(resolve(dataDir,'creator-hub.sqlite'));db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;');
 db.exec('CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, state TEXT NOT NULL); CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, changed_at TEXT NOT NULL);');
 const empty={people:[],accounts:[],projects:[],collabs:[],posts:[]};db.prepare('INSERT OR IGNORE INTO workspace (id,revision,state) VALUES (1,0,?)').run(JSON.stringify(empty));
-const html=readFileSync(resolve(root,'public/index.html'));
+const html=readFileSync(resolve(root,'public/index.html')),loginHTML=readFileSync(resolve(root,'public/login.html')),loginJS=readFileSync(resolve(root,'public/login.js'));
+function redirect(res,to){res.writeHead(303,{'Location':to,'Cache-Control':'no-store'});res.end();}
 const assets=new Map(['/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/vendor/xlsx.full.min.js'].map(path=>[path,readFileSync(resolve(root,'public'+path))]));
 const stages=['已报名','筛选中','沟通中','已确认合作','执行中','已完成','未选中','已取消'];
 function requireThat(ok,msg){if(!ok)throw Error(msg)}
@@ -42,12 +44,15 @@ function validate(s){
  for(const c of s.collabs)requireThat(c.stage!=='已完成'||s.posts.filter(p=>p.collab===c.id).length>=c.target,'完成合作的发布数量不足');
 }
 function json(res,status,data){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(data));}
-function authorized(req){if(!password)return true;const incoming=req.headers.authorization||'';const expected='Basic '+Buffer.from('team:'+password).toString('base64');const a=Buffer.from(incoming),b=Buffer.from(expected);return a.length===b.length&&timingSafeEqual(a,b)}
 const server=http.createServer(async(req,res)=>{
  try{
-  if(req.method==='GET'&&req.url==='/health'){json(res,200,{ok:true});return}
-  if(!authorized(req)){res.writeHead(401,{'WWW-Authenticate':'Basic realm="Creator Hub", charset="UTF-8"','Cache-Control':'no-store'});res.end('请登录');return}
   const url=new URL(req.url,'http://'+req.headers.host);
+  if(req.method==='GET'&&url.pathname==='/health'){json(res,200,{ok:true});return}
+  if(await auth.handle(req,res,url.pathname))return;
+  if(req.method==='GET'&&url.pathname==='/login'){if(auth.session(req)){redirect(res,'/');return;}res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",'Set-Cookie':auth.modeCookie()});res.end(loginHTML);return;}
+  if(req.method==='GET'&&url.pathname==='/login.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(loginJS);return;}
+  // Navigations use the form session. Existing API clients keep explicit Basic access.
+  if(!auth.session(req)&&!(url.pathname.startsWith('/api/')&&auth.basic(req))){if(req.method==='GET'&&url.pathname==='/')redirect(res,'/login');else json(res,401,{error:'登录已过期，请重新登录'});return;}
   if(req.method==='GET'&&url.pathname==='/'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"});res.end(html);return}
   if(req.method==='GET'&&assets.has(url.pathname)){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(assets.get(url.pathname));return}
   if(req.method==='GET'&&url.pathname==='/health'){json(res,200,{ok:true});return}
