@@ -1,16 +1,16 @@
 # Influencers
 
-itea 创作者管理网站，当前源码版本 **2.4.14**。支持小红书、Instagram、TikTok，业务数据通过 Lark Base 保存。
+itea 创作者管理网站，当前源码版本 **2.4.15**。支持小红书、Instagram、TikTok，业务数据通过 Lark Base 保存。
 
 - [完整网站源码](itea-creator-hub)
-- [2.4.14 累计升级包](releases/itea-creator-hub-upgrade-2.4.14.zip)
+- [2.4.15 累计升级包](releases/itea-creator-hub-upgrade-2.4.15.zip)
 - [安装与升级说明](releases/README.md)
 
 ## Render 免费试部署
 
 [打开免费部署入口](https://render.com/deploy?repo=https%3A%2F%2Fgithub.com%2Flinnier%2FInfluencers) · [逐步部署说明](docs/render-free.md)
 
-根目录 render.yaml 预设一个新加坡Free Web Service，运行本仓库2.4.13源码，继续使用原Lark Base。首次需要在Render填写团队密码、Lark App ID、App Secret和Base/wiki完整链接。密钥只在Render设置，不提交到仓库。当前配置关闭代码推送自动部署，后续在Render手动部署最新版，避免打断导入。
+根目录 render.yaml 预设一个新加坡Free Web Service，运行本仓库当前源码，继续使用原Lark Base。首次需要在Render填写团队密码、Lark App ID、App Secret和Base/wiki完整链接。密钥只在Render设置，不提交到仓库。当前配置关闭代码推送自动部署，后续在Render手动部署最新版，避免打断导入。
 
 Render已部署为 https://itea-creator-manager.onrender.com ，代码更新后需手动Deploy latest commit。当前内网导入页仍有匹配时，保持原页，不刷新、不迁移到新网址。云端先验证读取，再修改Lark应用入口。
 
@@ -47,4 +47,10 @@ npm run test:creator
 
 2.4.14增加网站内账号密码登录及退出，账号team与原TEAM_PASSWORD保持一致。访问/login查看新页面。`npm run test:login`验证会话及登录流程。
 
-[交互原型HTML](previews/itea-workflow.html)：登录、项目内达人筛选、collab@itea.sg邀约预览、报名匹配审核、导出名单及人工发券登记。此原型使用虚构数据，不会真实发送邮件或修改Lark，尚未接入生产业务接口。
+[交互原型HTML](previews/itea-workflow.html)：登录、项目内达人筛选、collab@itea.sg邀约预览、报名匹配审核、导出名单及人工发券登记。此原型使用虚构数据，不会真实发送邮件或修改Lark，原型使用演示数据。2.4.15已提供正式接口，真实发信需完成下方部署和邮箱授权。
+
+## 2.4.15 达人邀约与报名正式版
+
+[上线及 Lark 邮箱授权说明](docs/lark-mail-launch.md)。支持平台／粉丝筛选、逐人邮件确认、collab@itea.sg 用户 OAuth、专属及公开报名表、匹配审核入库、按达人导出 CSV 和人工发券登记。itea账号即领券账号，WhatsApp／微信独立保存。邀请、报名、发券和加密授权存入 Lark Base。Render Free 通过 HTTPS Mail API 发信，不使用被阻止的 SMTP 端口。未代用户发送真实邮件或操作 Render。
+
+代码推送后仍需在 Render **Manual Deploy → Deploy latest commit**，随后在 Lark 应用添加邮件用户权限及回调 URL 并由 collab@itea.sg 完成授权。运行 `npm run test:invites` 验证正式接口与交互闭环；使用虚构数据和模拟邮件接口。

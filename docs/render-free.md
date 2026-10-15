@@ -1,6 +1,6 @@
 # Render 免费试部署
 
-部署当前2.4.13网站到独立Render Free服务，继续连接原Lark Base。内网服务可继续运行；未完成的原导入页不要刷新、关闭或搬到新网址。先在云端核对读取结果，完成试用后再修改Lark应用入口。
+部署当前2.4.15网站到独立Render Free服务，继续连接原Lark Base。内网服务可继续运行；未完成的原导入页不要刷新、关闭或搬到新网址。先在云端核对读取结果，完成试用后再修改Lark应用入口。
 
 ## 注册和创建
 
@@ -26,7 +26,7 @@ App ID和Secret可在Lark开发者后台“凭证与基础信息”查看。原�
 ## 部署后的检查
 
 1. 打开Render给出的HTTPS网址，用team和设置的密码登录。
-2. 打开该网址下的 `/api/connection`，应显示 `mode: lark`、`configured: true`、`build: 2.4.13`。这只代表配置齐全，不代表真实Base读取已经通过。
+2. 打开该网址下的 `/api/connection`，应显示 `mode: lark`、`configured: true`、`build: 2.4.15`。这只代表配置齐全，不代表真实Base读取已经通过。
 3. 返回首页，确认能读取现有项目。进入十五周年庆，在全部平台、全部负责人筛选下核对人数和Post，先不新增或修改真实数据。
 4. 让一位外网同事打开同一HTTPS网址并登录，核对能看到相同数据。
 5. 读取验证通过后，将Lark开发者后台网页应用的桌面端、移动端主页改为该HTTPS网址，保存并发布版本。保留已使用的浏览器打开配置。网站目前仍为团队密码登录，尚未接入Lark身份免登录。
@@ -62,3 +62,7 @@ Render → New → Web Service，选择 `linnier/Influencers`，填写：
 部署失败时提供隐藏所有密钥后的构建或运行错误；不要分享Environment值或完整本机配置文件。
 
 [Render官方部署入口说明](https://render.com/docs/deploy-to-render) · [免费版限制](https://render.com/docs/free)
+
+## Lark 邮箱邀约与报名
+
+2.4.15新增正式工作流，按 [邮箱上线说明](lark-mail-launch.md) 配置邮件用户权限和回调地址，再在项目的“邀约与报名”中启用并授权 collab@itea.sg。不能使用应用 tenant_access_token 代替邮箱用户授权。Render 免费实例不支持常用 SMTP 端口，本版使用 HTTPS Mail API。
