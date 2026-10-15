@@ -1,0 +1,30 @@
+# Deploy from the repository root. Secrets are entered in the Render dashboard.
+services:
+  - type: web
+    name: itea-creator-manager
+    runtime: node
+    rootDir: itea-creator-hub
+    region: singapore
+    plan: free
+    numInstances: 1
+    autoDeployTrigger: "off"
+    buildCommand: npm install --omit=dev && npm run check
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: DATA_BACKEND
+        value: lark
+      - key: NODE_VERSION
+        value: 24.19.0
+      - key: DATA_DIR
+        value: /tmp/itea-runtime
+      - key: TEAM_PASSWORD
+        sync: false
+      - key: LARK_APP_ID
+        sync: false
+      - key: LARK_APP_SECRET
+        sync: false
+      - key: LARK_SOURCE_URL
+        sync: false

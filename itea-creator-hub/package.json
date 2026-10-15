@@ -19,7 +19,8 @@
     "test:workflow": "node tests/workflow.cjs && node tests/account-binding-batches.cjs",
     "test:creator": "node creator-summary-tests.mjs",
     "test:bulk-ui": "node tests/bulk-single.cjs",
-    "test:batch": "node tests/bulk-canonical.cjs && node tests/bulk-drafts.cjs"
+    "test:batch": "node tests/bulk-canonical.cjs && node tests/bulk-drafts.cjs",
+    "test:render": "node render-smoke-tests.mjs"
   },
   "devDependencies": {
     "jsdom": "26.1.0"
