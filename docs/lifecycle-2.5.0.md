@@ -54,3 +54,9 @@ Render → itea-creator-manager → Manual Deploy → Deploy latest commit。保
 运行npm run check、test:autofill、test:lifecycle、test:invites、test:render、test:login均通过。验证码发信测试使用mock，无生产发信或Lark写入。实际邮箱投递与浏览器布局需部署后核对。
 
 部署：Render的itea-creator-manager服务点击Manual Deploy → Deploy latest commit，成功后刷新；查看/api/connection的build为2.5.3。原公开链接继续有效，原有资料和授权保留。未改变未来自动部署设置。
+
+## 2.5.4 申请提交保护
+
+公开表单提前校验个人主页与粉丝量，不自动解析分享短链。申请POST没有盲目重试；显示提交中并防止双击，网络中断后不推断是否保存，恢复按钮、保留字段并提供复制备份。草稿仅存于当前浏览器标签页sessionStorage，最多24小时，刷新恢复时不恢复勾选确认，成功提交后删除；不缓存验证码。跨浏览器或不同手机不会自动同步草稿。
+
+验证npm run test:submission、test:autofill、test:lifecycle与test:render通过。真机连接失败尚未复现；此版本是输入校验、错误反馈及数据保留修补，不是已证实的网络连通修复。

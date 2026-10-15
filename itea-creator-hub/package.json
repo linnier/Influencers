@@ -1,6 +1,6 @@
 {
   "name": "creator-collaboration-hub",
-  "version": "2.5.3",
+  "version": "2.5.4",
   "private": true,
   "type": "module",
   "engines": {
@@ -25,7 +25,8 @@
     "test:invites": "node workflow-tests.mjs && node mail-shared-tests.mjs && node invite-ui-tests.mjs",
     "test:mail": "node mail-shared-tests.mjs",
     "test:lifecycle": "node lifecycle-tests.mjs && node lifecycle-ui-tests.mjs",
-    "test:autofill": "node intake-autofill-tests.mjs && node intake-autofill-ui-tests.mjs"
+    "test:autofill": "node intake-autofill-tests.mjs && node intake-autofill-ui-tests.mjs",
+    "test:submission": "node creator-submission-ui-tests.mjs"
   },
   "devDependencies": {
     "jsdom": "26.1.0"
