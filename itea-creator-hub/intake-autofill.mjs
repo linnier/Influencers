@@ -28,7 +28,7 @@ export function createIntakeAutofill({store,mail,getState,key,profile,json,body,
    const nonce=randomBytes(24).toString('base64url'),code=String(randomInt(100000,1000000));
    const c={form:form.id,identity,expires:Date.now()+10*60000,attempts:0,code:digest(nonce+':'+code),person:'',ready:false};challenges.set(nonce,c);
    const s=(await getState()).state,p=find(s,v.itea,v.email);
-   if(p){c.person=p.id;try{await mail.access();const draft=await mail.draft({to:p.email.trim(),id:'verify-'+nonce,subject:'itea 资料验证 / Verify your creator details',body:'你的 itea 达人资料验证码：'+code+'\n10分钟内有效，仅用于自动填写已有资料。请勿向他人提供验证码。若非本人操作，请忽略本邮件。\n\nYour verification code is '+code+'. Valid for 10 minutes. Use it to retrieve your existing creator details. Do not share this code. Ignore this email if you did not request it.'});await mail.send(draft);c.ready=true;}catch{console.error('达人资料验证邮件未确认发送；未开放资料读取。');}}
+   if(p){c.person=p.id;try{const token=await mail.access();const draft=await mail.draft({to:p.email.trim(),id:'verify-'+nonce,token,subject:'itea 资料验证 / Verify your creator details',body:'你的 itea 达人资料验证码：'+code+'\n10分钟内有效，仅用于自动填写已有资料。请勿向他人提供验证码。若非本人操作，请忽略本邮件。\n\nYour verification code is '+code+'. Valid for 10 minutes. Use it to retrieve your existing creator details. Do not share this code. Ignore this email if you did not request it.'});await mail.send(draft,{token});c.ready=true;}catch{console.error('达人资料验证邮件未确认发送；未开放资料读取。');}}
    json(res,200,{challenge:nonce,message:generic,retryAfter:60});return true;
   }
   const c=typeof v.challenge==='string'?challenges.get(v.challenge):null;

@@ -46,7 +46,7 @@ function validate(s){
  for(const c of s.collabs)requireThat(c.stage!=='已完成'||s.posts.filter(p=>p.collab===c.id).length>=c.target,'完成合作的发布数量不足');
 }
 function json(res,status,data){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(data));}
-const getWorkflowState=async()=>{if(lark)return lark.read();const row=db.prepare('SELECT revision,state FROM workspace WHERE id=1').get();return {revision:row.revision,state:JSON.parse(row.state)}};
+const getWorkflowState=async(options)=>{if(lark)return lark.read(options);const row=db.prepare('SELECT revision,state FROM workspace WHERE id=1').get();return {revision:row.revision,state:JSON.parse(row.state)}};
 const hooks={};
 const saveWorkflowState=async(state,revision)=>{if(lark)return lark.saveInner(state,revision);const row=db.prepare('UPDATE workspace SET state=?,revision=revision+1 WHERE id=1 AND revision=? RETURNING revision').get(JSON.stringify(state),revision);if(!row)throw Object.assign(Error('资料已更新，请重新审核'),{status:409});return row;};
 const workflow=createWorkflow({lark,db,auth,validate,getState:getWorkflowState,saveState:saveWorkflowState,hooks});
@@ -73,7 +73,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='GET'&&url.pathname==='/api/setup'){json(res,200,lark?await lark.inspect():{mode:'sqlite'});return}
   const importRoute=['/api/import/check','/api/import/prepare-fields'].includes(url.pathname);
   if(url.pathname!=='/api/state'&&!importRoute){json(res,404,{error:'页面不存在'});return}
-  if(req.method==='GET'&&lark&&!importRoute){json(res,200,await lark.read());return}
+  if(req.method==='GET'&&lark&&!importRoute){json(res,200,await lark.read({coalesce:true}));return}
   if(req.method==='GET'&&!importRoute){const row=db.prepare('SELECT revision,state FROM workspace WHERE id=1').get();json(res,200,{revision:row.revision,state:JSON.parse(row.state)});return}
   if(req.method!=='POST'){json(res,405,{error:'不支持该请求'});return}
   // Credentials are only safe with same-origin writes. Proxy deployments preserve the external Host.
