@@ -1,4 +1,4 @@
-# 2.4.16：上线达人邀约、报名审核与人工发券登记
+# 2.4.17：上线达人邀约、报名审核与人工发券登记
 
 正式网址：https://itea-creator-manager.onrender.com
 
@@ -9,7 +9,7 @@
 1. Render → `itea-creator-manager` → **Manual Deploy → Deploy latest commit**。
 2. 等待 **Live**，打开网站，用原 `team` 账号密码登录。
 3. 已有 `LARK_APP_ID`、`LARK_APP_SECRET`、`LARK_SOURCE_URL`、`TEAM_PASSWORD` 保持原配置。本版自动使用 Render 提供的 `RENDER_EXTERNAL_URL` 作为正式网址；使用自定义域名时另设 `PUBLIC_BASE_URL` 为该 HTTPS 域名，不带结尾斜杠。
-4. 在网站打开 `/api/connection`，确认 `build` 是 **2.4.16**。该接口仅说明配置齐全，真实读取以项目页面为准。
+4. 在网站打开 `/api/connection`，确认 `build` 是 **2.4.17**。该接口仅说明配置齐全，真实读取以项目页面为准。
 
 ## 2. 给原 Lark 应用添加权限
 
@@ -69,9 +69,16 @@ Render 免费服务阻止常用 SMTP 端口 25、465、587，本版通过 HTTPS 
 
 参考：[Render 免费限制](https://render.com/docs/free)、[Lark Mail SDK 接口定义](https://github.com/larksuite/oapi-sdk-go/blob/v3_main/service/mail/v1/resource.go)。
 
-## 2.4.16 建表修复
+## 2.4.17 建表修复
 
 修复首次点击“启用邀约与报名”时的 `1254001`：Lark 要求指定默认视图名称时必须同时提供初始字段，本版随建表请求提交“工作流ID”和“数据”两个文本字段。已有同名表只补缺失字段，不重复建表。请求格式错误会明确提示参数问题，不再一律提示权限不足。此修补不发送邮件，也不修改原有达人、合作或 Post 记录。
 
-更新方式：Render → Manual Deploy → Deploy latest commit，等待 Live 后刷新网站，再点“启用邀约与报名”。可在 `/api/connection` 核对 build 为 `2.4.16`。如果后续出现新的权限错误，再按具体错误开通对应权限。
+更新方式：Render → Manual Deploy → Deploy latest commit，等待 Live 后刷新网站，再点“启用邀约与报名”。可在 `/api/connection` 核对 build 为 `2.4.17`。如果后续出现新的权限错误，再按具体错误开通对应权限。
 
+
+
+## 2.4.17 空工作流表读取修复
+
+兼容 Lark 成功响应在 total=0 或 has_more=false 时省略／置空 items 的格式，按零条记录读取。空白占位行不当作业务记录。非空、仍有下一页或结构错误的响应继续报错，保留分页完整性检查。新增表创建、空表读取、部分字段补齐、已有分页和报名审核交互均有离线回归测试；真实 Lark 的结果以部署后验证为准。
+
+更新：Render → Manual Deploy → Deploy latest commit，等待 Live 后刷新页面并点“重新读取”。工作流表已存在时会直接进入邀约界面，无需重复建表。/api/connection 中 build 应为 2.4.17。此修补不修改达人、合作、Post 或已保存工作流记录。
