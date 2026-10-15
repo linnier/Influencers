@@ -33,3 +33,8 @@ Render → itea-creator-manager → Manual Deploy → Deploy latest commit。保
 `npm run check`、`npm run test:lifecycle`、`npm run test:invites`、`npm run test:lark`、`npm run test:render`、`npm run test:login`、`npm run test:creator`。通知接口测试使用模拟邮箱，不发送真实邮件；本地SQLite联动测试验证实际表单生成、提交、审核及达人库人数更新。真实Lark和邮箱结果需部署后核对。
 
 上线后先核对项目人数、平台账号与历史Post；生成入库表单但可先暂停接收。以测试达人试填一条、审核后核对邮箱和平台粉丝量，再安排真实邮件。
+
+
+## 2.5.1 表单响应修补
+
+部署最新版后，build应为2.5.1。后台生成表单不再读取整库资料，保存后直接返回链接；按钮立即显示正在保存，慢响应和失败均可见。公开入库表单仅读取配置，GET不等待业务写入锁；读取超时可重新读取，提交不盲目重试。原有表单链接、邮箱授权与申请记录保留。检查新增真实按钮点击及公开表单前端载入、整库读取失败时独立生成表单、写入队列被占用时公开配置读取仍可完成。
