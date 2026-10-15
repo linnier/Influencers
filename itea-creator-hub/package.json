@@ -1,6 +1,6 @@
 {
   "name": "creator-collaboration-hub",
-  "version": "2.5.2",
+  "version": "2.5.3",
   "private": true,
   "type": "module",
   "engines": {
@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "check": "node --check server.mjs && node --check client-check.js && node --check lark-store.mjs && node --check setup-local.mjs && node --check public/bulk-core.js && node --check public/bulk-ui.js && node --check public/finance.js && node --check public/creator-import.js && node --check public/project-workflow.js && node --check public/post-links.js && node --check public/multi-import.js && node --check auth.mjs && node --check public/login.js && node --check workflow.mjs && node --check workflow-store.mjs && node --check lark-mail.mjs && node --check public/invite-workflow.js && node --check public/apply.js && node --check lifecycle.mjs && node --check public/lifecycle-ui.js && node --check public/creator-public.js",
+    "check": "node --check server.mjs && node --check client-check.js && node --check lark-store.mjs && node --check setup-local.mjs && node --check public/bulk-core.js && node --check public/bulk-ui.js && node --check public/finance.js && node --check public/creator-import.js && node --check public/project-workflow.js && node --check public/post-links.js && node --check public/multi-import.js && node --check auth.mjs && node --check public/login.js && node --check workflow.mjs && node --check workflow-store.mjs && node --check lark-mail.mjs && node --check public/invite-workflow.js && node --check public/apply.js && node --check lifecycle.mjs && node --check public/lifecycle-ui.js && node --check public/creator-public.js && node --check intake-autofill.mjs && node --check public/ui-preferences.js",
     "test": "node tests.mjs",
     "test:lark": "node lark-tests.mjs",
     "start:lan": "node setup-local.mjs",
@@ -24,7 +24,8 @@
     "test:login": "node login-tests.mjs",
     "test:invites": "node workflow-tests.mjs && node mail-shared-tests.mjs && node invite-ui-tests.mjs",
     "test:mail": "node mail-shared-tests.mjs",
-    "test:lifecycle": "node lifecycle-tests.mjs && node lifecycle-ui-tests.mjs"
+    "test:lifecycle": "node lifecycle-tests.mjs && node lifecycle-ui-tests.mjs",
+    "test:autofill": "node intake-autofill-tests.mjs && node intake-autofill-ui-tests.mjs"
   },
   "devDependencies": {
     "jsdom": "26.1.0"
