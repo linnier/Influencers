@@ -1,9 +1,9 @@
 # Influencers
 
-itea 创作者管理网站，当前源码版本 **2.4.18**。支持小红书、Instagram、TikTok，业务数据通过 Lark Base 保存。
+itea 创作者管理网站，当前源码版本 **2.4.19**。支持小红书、Instagram、TikTok，业务数据通过 Lark Base 保存。
 
 - [完整网站源码](itea-creator-hub)
-- [2.4.18 累计升级包](releases/itea-creator-hub-upgrade-2.4.18.zip)
+- [2.4.19 累计升级包](releases/itea-creator-hub-upgrade-2.4.19.zip)
 - [安装与升级说明](releases/README.md)
 
 ## Render 免费试部署
@@ -75,3 +75,10 @@ npm run test:creator
 允许有权使用 collab@itea.sg 共享邮箱的个人Lark账号授权。通过 accessible_mailboxes 精确核对目标公共邮箱；草稿、发送、投递查询均明确使用该邮箱，From 固定为 collab@itea.sg。无成员权限或返回邮件群组时拒绝新授权；不会改用个人邮箱发信。原主邮箱直接授权继续支持，现有邮件权限、offline_access 和回调地址可沿用。界面显示“共享邮箱已授权”。
 
 更新后在网站重新点击连接邮箱，使用自己的Lark账号完成授权。详见 [邮箱设置说明](docs/lark-mail-launch.md)。`npm run test:mail`验证共享邮箱边界及主邮箱兼容；邮件接口测试为模拟，不代表已向达人发信。
+
+
+## 2.4.19 报名审核自动刷新
+
+修复审核页一直使用初次读取缓存的问题。进入“报名审核”和“邀约记录”时重新读取工作流；审核页可见且未打开编辑弹窗、未编辑输入框时每30秒刷新，回到浏览器窗口时检查更新。请求明确不使用HTTP缓存。刷新入口移到列表上方，显示同步时间；读取失败保留上次数据并明确提示，不把失败显示成零条报名。无需达人重复提交。
+
+Render手动部署最新版后刷新网站即可。`npm run test:invites`覆盖外部报名提交后的审核页刷新、后台定时更新、读取失败保留及审核弹窗保护；模拟接口测试已通过，实际报名由用户验证已回流。

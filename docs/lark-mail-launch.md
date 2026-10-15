@@ -1,4 +1,4 @@
-# 2.4.18：共享邮箱邀约、报名审核与人工发券登记
+# 2.4.19：共享邮箱邀约、报名审核与人工发券登记
 
 正式网站：https://itea-creator-manager.onrender.com
 
@@ -6,7 +6,7 @@
 
 ## 部署新版
 
-Render → itea-creator-manager → **Manual Deploy → Deploy latest commit**，等待 Live。登录网站后可在 `/api/connection` 核对 build 为 `2.4.18`。GitHub 推送不会自动部署，之前的邀约匹配和导入操作应完成后再部署。
+Render → itea-creator-manager → **Manual Deploy → Deploy latest commit**，等待 Live。登录网站后可在 `/api/connection` 核对 build 为 `2.4.19`。GitHub 推送不会自动部署，之前的邀约匹配和导入操作应完成后再部署。
 
 沿用现有 TEAM_PASSWORD、LARK_APP_ID、LARK_APP_SECRET 及 LARK_SOURCE_URL／LARK_BASE_TOKEN。Render 自动提供 RENDER_EXTERNAL_URL；自定义域名时可设置 PUBLIC_BASE_URL 为该固定 HTTPS 地址，不带末尾斜杠。
 
@@ -22,7 +22,7 @@ Render → itea-creator-manager → **Manual Deploy → Deploy latest commit**�
 | `mail:user_mailbox.message:readonly` | 查询投递状态 |
 | `offline_access` | 持续访问已授权数据，用于自动续期 |
 
-需要时完成管理员审批，并发布应用新版本。若权限已经配置，2.4.18 无需新增邮件权限。
+需要时完成管理员审批，并发布应用新版本。若权限已经配置，2.4.19 无需新增邮件权限。
 
 “安全设置 → 重定向 URL”添加：
 
@@ -67,3 +67,10 @@ Render 免费版阻止SMTP端口25／465／587，邮件通过HTTPS API发送。�
 验证：`npm run check`、`npm run test:invites`、`npm run test:mail`、`npm run test:lark`、`npm run test:render`。交互测试需要安装开发依赖。
 
 接口依据：[Lark官方邮箱接口定义](https://github.com/larksuite/cli/blob/main/internal/registry/catalog/services/mail.json)、[共享邮箱发送参数说明](https://github.com/larksuite/cli/blob/main/skills/lark-mail/references/lark-mail-send.md)、[Render免费限制](https://render.com/docs/free)。
+
+
+## 2.4.19 报名审核自动刷新
+
+修复审核页一直使用初次读取缓存的问题。进入“报名审核”和“邀约记录”时重新读取工作流；审核页可见且未打开编辑弹窗、未编辑输入框时每30秒刷新，回到浏览器窗口时检查更新。请求明确不使用HTTP缓存。刷新入口移到列表上方，显示同步时间；读取失败保留上次数据并明确提示，不把失败显示成零条报名。无需达人重复提交。
+
+Render手动部署最新版后刷新网站即可。`npm run test:invites`覆盖外部报名提交后的审核页刷新、后台定时更新、读取失败保留及审核弹窗保护；模拟接口测试已通过，实际报名由用户验证已回流。
