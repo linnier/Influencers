@@ -68,3 +68,7 @@ Render → itea-creator-manager → Manual Deploy → Deploy latest commit。保
 后台催促先读取设置，关闭或未到期时不进入写入锁、不读取五张业务表；到期在锁内重新确认，仍遵循冷却期与未知发送结果不重试规则。只读审核列表不占写队列。工作流列表与邮箱状态只读一次工作流；发送已确认邮件及投递查询跳过无关业务数据，草稿/发送复用单次授权读取。页面启动的状态、数据请求并行。
 
 验证npm run check、test:performance、test:lark、test:lifecycle、test:autofill、test:submission、test:invites、test:render、test:login通过。模拟3个同时页面读取11次而非33次，GET峰值3；真实线上提速未测量。保留2.5.4提交保护、2.5.3UI与验证自动填写、2.5.2结果展示和2.5.1表单读取修补。Render手动部署最新提交后build为2.5.5。免费休眠仍可能拖慢首次访问。
+
+## 2.6.0 权限与回收站
+
+新增服务器权限控制、独立员工和共用查阅账号、单项目负责人分配、离职交接及可恢复删除。联系方式不返回查阅账号，费用仍可见，导出API拒绝。使用现有team登录系统管理；详细配置、权限范围及测试见[user-admin-2.6.0.md](user-admin-2.6.0.md)。本次未操作生产账号或数据。
