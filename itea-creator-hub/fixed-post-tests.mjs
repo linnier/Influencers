@@ -1,0 +1,27 @@
+import fs from 'node:fs';
+import vm from 'node:vm';
+import assert from 'node:assert/strict';
+import {checkOwnerChanges,redactState} from './access-control.mjs';
+const ctx={URL};vm.createContext(ctx);
+for(const f of ['vendor/xlsx.full.min.js','bulk-core.js','creator-import.js','post-links.js','multi-import.js'])vm.runInContext(fs.readFileSync(new URL('public/'+f,import.meta.url),'utf8'),ctx);
+const X=ctx.XLSX,B=ctx.BulkImport,M=ctx.MultiImport,empty=()=>({people:[],accounts:[],projects:[],collabs:[],posts:[]});let seq=0;const id=p=>p+(++seq),opts={projectName:'固定测试',owner:'Amy',currency:'SGD',budget:'',confirmed:'',today:'2026-10-16'};
+const headers=Array.from(M.templateHeaders);
+const row=[1,'Instagram','测试达人',5400,'https://www.instagram.com/demo/','tea_demo','WX demo','demo@example.com','2026-09-21','https://www.instagram.com/p/DemoPost/',9000,5400,90,50,10,20,10,0,5,'Amy'];
+function book(rows=[row],h=headers){const w=X.utils.book_new();X.utils.book_append_sheet(w,X.utils.aoa_to_sheet([h,...rows]),'Post导入');return w;}
+function read(rows=[row],h=headers){return B.readWorkbook(X.read(X.write(book(rows,h),{type:'array',bookType:'xlsx'}),{type:'array',sheetRows:520}),X,'固定.xlsx');}
+const template=M.templateWorkbook(X);assert.equal(template.SheetNames.length,2);assert.equal(X.utils.sheet_to_json(template.Sheets.Post导入,{header:1})[0].length,20);
+let data=read();assert(data.fixed);let p=B.plan(data,empty(),opts,id);assert.equal(p.errors.length,0,Array.from(p.errors).join('\n'));assert.equal(p.state.people[0].email,'demo@example.com');assert.equal(p.state.people[0].contact,'WX demo');assert.equal(p.state.people[0].itea,'tea_demo');assert.equal(p.state.accounts[0].fans,5400);const post=p.state.posts[0];for(const [key,value]of Object.entries({views:5400,exposure:9000,reportedInteractions:90,likes:50,saves:10,comments:20,shares:10,follows:0,voucherCount:5,voucherCost:15,price:null,date:'2026-09-21'}))assert.equal(post[key],value,key);
+checkOwnerChanges({role:'owner',owner:'Amy'},empty(),p.state);assert.throws(()=>checkOwnerChanges({role:'owner',owner:'Ben'},empty(),p.state));assert.equal(redactState(p.state).people[0].email,'');assert.equal(redactState(p.state).posts[0].sourceData,'');
+const old=structuredClone(p.state);old.people[0].email='old@example.com';old.people[0].contact='original';old.accounts[0].fans=999;let again=B.plan(data,old,{...opts,projectId:old.projects[0].id},id);assert.equal(again.errors.length,0);assert.equal(again.actions.length,0);assert.equal(old.people[0].email,'old@example.com');
+const newPost=[...row];newPost[9]='https://www.instagram.com/p/NewPost/';newPost[18]=0;let existing=B.plan(read([newPost]),old,{...opts,projectId:old.projects[0].id},id);assert.equal(existing.errors.length,0);assert.equal(existing.actions.length,1);assert.equal(existing.state.people[0].email,'old@example.com');assert.equal(existing.state.accounts[0].fans,999);
+const bilingual=[...headers];bilingual[5]='itea Account 账号';bilingual[6]='Contact Details 联系方式（Wsap / WX）';bilingual[7]='Email Address 邮箱';bilingual[8]='Release Date 发布日期(9.21-9.27)';const br=read([row],bilingual).rows[0];assert.equal(br.itea,'tea_demo');assert.equal(br.email,'demo@example.com');assert.equal(br.contact,'WX demo');assert.equal(br.date,'2026-09-21');
+const missing=[...row];missing[8]='';missing[10]='';missing[11]=0;missing[12]='';missing[18]='';let unknown=B.plan(read([missing]),empty(),opts,id);assert.equal(unknown.errors.length,0);assert.equal(unknown.state.posts[0].dateUnknown,true);assert.equal(unknown.state.posts[0].exposure,null);assert.equal(unknown.state.posts[0].views,0);assert.equal(unknown.state.posts[0].voucherCount,null);
+for(const [index,value,expected]of [[2,'','昵称'],[1,'','平台'],[1,'IG+TT','平台'],[1,'TikTok','平台'],[4,'https://xhslink.cn/o/demo','账号链接'],[8,'9.21-9.27','发布日期'],[8,'2026-02-30','发布日期'],[8,'2027-01-01','发布日期'],[7,'invalid','邮箱'],[3,'abc','粉丝数'],[18,-1,'发券数量'],[18,1.5,'发券数量'],[9,'','发布链接'],[9,'https://www.instagram.com/demo/','发布链接']]){const r=[...row];r[index]=value;const bad=B.plan(read([r]),empty(),opts,id);assert(bad.errors.some(e=>e.includes(expected)),`${index} ${value}: ${bad.errors}`);assert.equal(read([r]).rows.length,1,'bad row must not be silently skipped');}
+assert.throws(()=>read([row],[...headers,'粉丝量']),/同一字段/);
+assert.throws(()=>read([row],[...headers,'邮箱']),/重复/);
+for(const name of ['昵称','平台','账号链接','发布日期','发布链接'])assert.throws(()=>read([row],headers.map(h=>h===name?'错误列名':h)),/缺少列/);
+assert.deepEqual(Array.from(data.sheets),['Post导入']);
+let duplicate=B.plan(read([row,row]),empty(),opts,id);assert(duplicate.errors.some(e=>e.includes('重复')));
+const conflict=[...newPost];conflict[5]='other_tea';assert(B.plan(read([conflict]),old,{...opts,projectId:old.projects[0].id},id).errors.some(e=>e.includes('不一致')));
+const newAccount=[...row];newAccount[1]='TikTok';newAccount[4]='https://www.tiktok.com/@demo_tt';newAccount[9]='https://www.tiktok.com/@demo_tt/video/1234567890123456789';let link=B.plan(read([newAccount]),old,{...opts,projectId:old.projects[0].id},id);assert.equal(link.errors.length,0);assert.equal(link.state.people.length,1);assert.equal(link.state.accounts.length,2);assert.equal(link.state.people[0].email,'old@example.com');
+console.log('PASS fixed Post template: 20 fields, bilingual aliases, blank vs zero, metric/coupon/owner mapping, invalid-row errors, identity conflicts, no overwrites, duplicate skip, RBAC and privacy.');

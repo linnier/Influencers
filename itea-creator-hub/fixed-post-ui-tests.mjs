@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import {readFileSync,mkdtempSync,rmSync} from 'node:fs';
+import {spawn} from 'node:child_process';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
+import {JSDOM,VirtualConsole} from 'jsdom';
+const dir=mkdtempSync(join(tmpdir(),'fixed-post-'));let child,dom,base;const errors=[];
+const wait=async fn=>{for(let i=0;i<400;i++){if(await fn())return;await new Promise(r=>setTimeout(r,15));}throw Error('UI timeout');};
+try{
+child=spawn(process.execPath,['server.mjs'],{cwd:new URL('.',import.meta.url),env:{...process.env,HOST:'127.0.0.1',PORT:'0',DATA_DIR:dir,DATA_BACKEND:'sqlite',TEAM_PASSWORD:''},stdio:['ignore','pipe','pipe']});
+base=await new Promise((resolve,reject)=>{let out='';child.stdout.on('data',b=>{out+=b;const m=out.match(/http:\/\/127\.0\.0\.1:\d+/);if(m)resolve(m[0]);});child.once('exit',c=>reject(Error('server exited '+c)));setTimeout(()=>reject(Error('startup timeout')),5000).unref();});
+let html=readFileSync(new URL('./public/index.html',import.meta.url),'utf8').replace(/<script src="([^"]+)"><\/script>/g,(_,p)=>'<script>'+readFileSync(new URL('./public'+p,import.meta.url),'utf8').replace(/<\/script/g,'<\\/script')+'</script>');
+const vc=new VirtualConsole();vc.on('jsdomError',e=>{if(e.type!=='css parsing')errors.push(e.message);});let writes=0;
+dom=new JSDOM(html,{url:base,runScripts:'dangerously',pretendToBeVisual:true,virtualConsole:vc,beforeParse(w){w.scrollTo=()=>{};w.fetch=(path,opt={})=>{if(path==='/api/state'&&opt.method==='POST')writes++;return fetch(base+path,{...opt,headers:{Origin:base,...opt.headers}});};}});
+const w=dom.window,d=w.document;await wait(()=>w.AdminUI?.me()?.role==='admin'&&d.querySelector('#connection').textContent.includes('已连接'));
+d.querySelector('[data-tab="项目管理"]').click();d.querySelector('[data-tab="批量导入"]').click();assert(d.querySelector('#bulkTemplate'));
+let downloaded;w.XLSX.writeFile=(wb,name)=>{downloaded={wb,name};};d.querySelector('#bulkTemplate').click();assert.match(downloaded.name,/\.xlsx$/);assert.equal(w.XLSX.utils.sheet_to_json(downloaded.wb.Sheets.Post导入,{header:1})[0].length,20);
+const change=(id,value)=>{d.querySelector(id).value=value;d.querySelector(id).dispatchEvent(new w.Event('change',{bubbles:true}));};change('#bulkOwner','Amy');change('#bulkCurrency','SGD');
+const X=w.XLSX,headers=Array.from(w.MultiImport.templateHeaders),rows=[];
+for(let i=1;i<=33;i++){const pl=['Instagram','TikTok','小红书'][(i-1)%3],uid=String(i).padStart(24,'0'),profile=pl==='Instagram'?'https://www.instagram.com/demo'+i+'/':pl==='TikTok'?'https://www.tiktok.com/@demo'+i:'https://www.xiaohongshu.com/user/profile/'+uid,url=pl==='Instagram'?'https://www.instagram.com/p/Post'+i+'/':pl==='TikTok'?'https://www.tiktok.com/@demo'+i+'/video/'+(1000000000+i):'https://www.xiaohongshu.com/explore/'+uid;rows.push([i,pl,'达人'+i,5400,profile,'tea'+i,'WX demo'+i,'demo'+i+'@example.com','2026-09-21',url,'',0,10,5,'',2,3,0,1,'Amy']);}
+async function upload(data){const wb=X.utils.book_new();X.utils.book_append_sheet(wb,X.utils.aoa_to_sheet([headers,...data]),'Post导入');const bytes=X.write(wb,{bookType:'xlsx',type:'array'}),picker=d.querySelector('#bulkFile');Object.defineProperty(picker,'files',{configurable:true,value:[{name:'标准Post.xlsx',size:bytes.byteLength,arrayBuffer:async()=>bytes}]});picker.dispatchEvent(new w.Event('change'));await wait(()=>!d.querySelector('#bulkProgress').textContent.includes('正在读取'));}
+const invalid=rows.map(r=>[...r]);invalid[0][8]='9.21-9.27';await upload(invalid);assert(d.querySelector('#bulkRun').disabled);assert.match(d.querySelector('#bulkPreviewArea').textContent,/第2行/);assert.match(d.querySelector('#bulkPreviewArea').textContent,/发布日期/);assert.equal(writes,0);
+await upload(rows);assert(!d.querySelector('#bulkRun').disabled,d.querySelector('#bulkProgress').textContent);assert.match(d.querySelector('#bulkPreviewArea').textContent,/demo1@example.com/);assert.match(d.querySelector('#bulkPreviewArea').textContent,/合作负责人：Amy/);d.querySelector('#bulkRun').click();await wait(()=>d.querySelector('#bulkProgress')?.textContent.includes('导入成功'));
+const result=await (await fetch(base+'/api/state')).json();assert.equal(result.state.posts.length,33);assert.equal(result.state.people.length,33);assert.equal(result.state.projects.length,1);assert(writes>1);assert.equal(result.state.people[0].email,'demo1@example.com');assert.equal(result.state.people[0].contact,'WX demo1');assert.equal(result.state.posts[0].shares,3);assert.equal(result.state.posts[0].views,0);assert.equal(result.state.posts[0].exposure,null);assert.equal(result.state.posts[0].price,null);assert.equal(result.state.posts[0].voucherCount,1);assert.equal(result.state.posts[0].voucherCost,3);assert(d.querySelector('#bulkRun').disabled);assert.match(d.querySelector('#bulkPreviewArea').textContent,/跳过已有Post/);assert.equal(errors.length,0,errors.join('\n'));
+console.log('PASS fixed-template real HTTP/SQLite UI: download, invalid-date block, 33 rows across 3 platforms, preview, batched server validation/save, contacts/coupons, repeat skip.');
+}finally{dom?.window.close();if(child?.exitCode===null){child.kill('SIGTERM');await new Promise(r=>child.once('exit',r));}rmSync(dir,{recursive:true,force:true});}

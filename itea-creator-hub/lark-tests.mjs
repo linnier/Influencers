@@ -26,6 +26,7 @@ const unconfigured=new LarkStore({fetchImpl});assert.equal(unconfigured.status()
 
 // Bulk schema creation only adds missing fields; preflight supports >20 changes without writing.
 const prepared=await store.prepareImportFields();assert.equal(prepared.added.length,24);assert.equal((await store.prepareImportFields()).added.length,0);
+fields.people=fields.people.filter(f=>!['邮箱','联系方式'].includes(f.field_name));fields.accounts=fields.accounts.filter(f=>f.field_name!=='粉丝数');const contactFields=await store.prepareImportFields();assert.equal(contactFields.added.length,3);assert.equal(fields.accounts.find(f=>f.field_name==='粉丝数').type,2);assert.equal((await store.prepareImportFields()).added.length,0);
 latest=await store.read();proposed=structuredClone(latest.state);
 proposed.projects.push({id:'IMPORT_P',name:'Batch project',owner:'待分配',budget:15000,currency:'CNY'});
 proposed.collabs.push({id:'IMPORT_C',project:'IMPORT_P',person:'D0',account:'A0',stage:'已确认合作',confirmed:'',confirmedUnknown:true,owner:'待分配',due:'',target:1});
