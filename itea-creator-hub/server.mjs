@@ -27,7 +27,7 @@ db.exec('CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1
 const empty={people:[],accounts:[],projects:[],collabs:[],posts:[]};db.prepare('INSERT OR IGNORE INTO workspace (id,revision,state) VALUES (1,0,?)').run(JSON.stringify(empty));
 const html=readFileSync(resolve(root,'public/index.html')),loginHTML=readFileSync(resolve(root,'public/login.html')),loginJS=readFileSync(resolve(root,'public/login.js'));
 function redirect(res,to){res.writeHead(303,{'Location':to,'Cache-Control':'no-store'});res.end();}
-const assets=new Map(['/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,readFileSync(resolve(root,'public'+path))]));
+const assets=new Map(['/mail-templates.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,readFileSync(resolve(root,'public'+path))]));
 const stages=['已报名','筛选中','沟通中','已确认合作','执行中','已完成','未选中','已取消'];
 function requireThat(ok,msg){if(!ok)throw Object.assign(Error(msg),{status:400})}
 function text(v,max=160){return typeof v==='string'&&v.length<=max}
