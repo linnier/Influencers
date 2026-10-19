@@ -34,3 +34,20 @@ console.log('PASS mailbox authorization: draft+send share one fresh authorizatio
  const service=createLifecycle({store:reminderStore,mail:{access:async()=> 'token',draft:async()=> 'draft',send:async()=>{sent++;return 'message'}},getState:async()=>({state:business,revision:'r'}),saveState:()=>{},validate:()=>{},key:'test-key',baseURL:'https://creator.test'});await service.tick();assert.equal(sent,1);assert.equal(reminders.find(r=>r.kind==='notification').status,'已提交邮箱');await service.tick();assert.equal(sent,1);
 }
 console.log('PASS enabled due reminders still send once and honor the existing cooldown.');
+// The just-verified confirmation state can render its notice without another business scan.
+{
+ const business={people:[{id:'p',name:'Alice',email:'alice@example.com',itea:'alice'}],accounts:[{id:'a',person:'p',platform:'Instagram',handle:'alice'}],projects:[{id:'P',name:'Tea',currency:'SGD'}],collabs:[{id:'c',project:'P',person:'p',account:'a',confirmed:'2026-01-01',target:1,stage:'已确认合作',agreedPrice:0}],posts:[]};
+ const application={id:'APP',kind:'application',project:'P',person:'p',status:'已确认合作',reward:{amount:0,vouchers:10}},rows=[application];let sent=0;
+ const store={rows:async()=>{throw Error('confirmation context must avoid workflow re-read')},put:async(row,options)=>{if(row.kind==='grant'||row.status==='待发送')assert.equal(options.rows,rows);return {...row,_record:row.id}}};
+ const service=createLifecycle({store,mail:{access:async()=> 'fresh-token',draft:async({body})=>{assert(body.includes('10'));return 'draft'},send:async()=>{sent++;return 'message'}},getState:async()=>{throw Error('confirmation context must avoid business re-read')},saveState:()=>{},validate:()=>{},key:'test-key',baseURL:'https://creator.test'});
+ await service.confirmed(application,{state:business,rows});assert.equal(sent,1);assert(rows.find(r=>r.kind==='notification').body.includes('Instagram'));
+}
+// Within the shared write lock, known rows resolve record IDs and absence without another list.
+{
+ const calls=[],lark={request:async(path,options)=>{calls.push({path,method:options.method});return {record:{record_id:'record-new'}}},list:async()=>{throw Error('known rows must avoid list lookup')}};
+ const store=new WorkflowStore({lark});store.tablePath='/open-apis/bitable/v1/apps/test/tables/workflow';
+ await store.put({id:'new',kind:'grant'},{rows:[]});
+ await store.put({id:'existing',kind:'grant'},{rows:[{id:'existing',_record:'old-record'}]});
+ assert.equal(calls[0].method,'POST');assert.equal(calls[1].method,'PUT');assert(calls[1].path.endsWith('/old-record'));
+}
+console.log('PASS confirmation notice reuses verified business/workflow context and known row IDs; fresh mailbox access and single send retained.');
