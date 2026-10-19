@@ -30,3 +30,13 @@ const twenty=read([row],headers.slice(0,20));assert.equal(B.plan(twenty,empty(),
 console.log('PASS fixed Post template: 25 fields, five-part interactions and paid metrics, missing/zero, no double counting, legacy20, binary XLSX, bilingual aliases, blank vs zero, metric/coupon/owner mapping, invalid-row errors, identity conflicts, no overwrites, duplicate skip, RBAC and privacy.');
 
 assert.equal(F.interactionValue({reportedInteractions:0,likes:50}),0);assert.equal(F.interactionValue({likes:10,comments:2,saves:null}),12);assert.equal(F.interactionValue({likes:0}),0);assert.equal(F.interactionValue({}),null);assert.equal(F.interactionValue({reportedInteractions:null,likes:4,shares:6}),10);
+
+// Correcting a preview row must revalidate its current values instead of keeping source errors.
+const broken=[...row];broken[2]='';broken[3]='2000+';broken[4]='https://xhslink.cn/o/profile';broken[8]='9.21-9.27';broken[9]='https://www.instagram.com/demo/';
+const correction=read([broken]),cr=correction.rows[0];assert(B.plan(correction,empty(),opts,id).errors.length>0);
+Object.assign(cr,{name:'Corrected',fansOverride:'2000',profileOverride:row[4],postOverride:row[9],dateOverride:'2026-09-21',dateUnknown:false});
+let corrected=B.plan(correction,empty(),opts,id);assert.equal(corrected.errors.length,0,Array.from(corrected.errors).join('\n'));assert.equal(corrected.state.accounts[0].fans,2000);assert.equal(cr.raw['粉丝数'],'2000+');
+cr.fansOverride='650+';assert(B.plan(correction,empty(),opts,id).errors.some(e=>e.includes('粉丝数')));cr.fansOverride='0';cr.dateUnknown=true;corrected=B.plan(correction,empty(),opts,id);assert.equal(corrected.errors.length,0);assert.equal(corrected.state.accounts[0].fans,0);assert.equal(corrected.state.posts[0].date,'');
+const conflictCorrection=read([conflict]);assert(B.plan(conflictCorrection,old,{...opts,projectId:old.projects[0].id},id).errors.length);conflictCorrection.rows[0].iteaOverride='tea_demo';assert.equal(B.plan(conflictCorrection,old,{...opts,projectId:old.projects[0].id},id).errors.length,0);
+for(const url of ['', 'https://example.com/unsupported']){const b=[...row];b[9]=url;const input=read([b]);assert(B.plan(input,empty(),opts,id).errors.length);input.rows[0].postOverride=row[9];assert.equal(B.plan(input,empty(),opts,id).errors.length,0);}
+console.log('PASS preview corrections: stale link/profile/date/name errors clear; current fan/identity errors remain; explicit unknown date and original source preservation.');
