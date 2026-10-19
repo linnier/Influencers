@@ -1,8 +1,14 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';
 const ctx={};vm.createContext(ctx);vm.runInContext(fs.readFileSync(new URL('public/finance.js',import.meta.url),'utf8'),ctx);const F=ctx.FeeOverview;
-const state={projects:[{id:'P',currency:'SGD'}],collabs:[{id:'C',project:'P'}]};const note=(price,exposure,views,n)=>({collab:'C',price,exposure,views,likes:n,comments:0,saves:0,shares:0,follows:0,reportedInteractions:0,paidCost:999,voucherCount:100});
+const state={projects:[{id:'P',currency:'SGD'}],collabs:[{id:'C',project:'P'}]};const note=(price,exposure,views,n)=>({collab:'C',price,exposure,views,likes:n,comments:0,saves:0,shares:0,follows:0,reportedInteractions:null,paidCost:999,voucherCount:100});
 let r=F.creatorSummary(state,[note(100,1000,100,10),note(0,3000,300,30),note(null,2000,600,60)]);assert.equal(r.data.metrics.views.value,1000);assert.equal(r.data.metrics.interactions.value,100);assert.equal(r.groups[0].price,100);assert.equal(r.groups[0].priceKnown,2);assert.equal(r.groups[0].cpm,25);assert.equal(r.groups[0].cpe,2.5);assert.equal(r.groups[0].cpeKnown,2);
 r=F.creatorSummary(state,[note(0,0,0,0)]);assert.equal(r.groups[0].price,0);assert.equal(r.groups[0].cpm,null);assert.equal(r.groups[0].cpe,null);
 r=F.creatorSummary(state,[{collab:'C',price:null,views:null,exposure:null,likes:null,comments:null,saves:null,shares:null}]);assert.equal(r.data.metrics.views.value,null);assert.equal(r.data.metrics.interactions.value,null);assert.equal(r.groups[0].price,null);assert.equal(r.groups[0].cpe,null);
 r=F.creatorSummary(state,[note(100,1000,100,10),{...note(10,2000,200,20),currency:'CNY'}]);assert.equal(r.groups.length,2);assert.equal(r.groups.find(g=>g.currency==='SGD').cpe,10);assert.equal(r.groups.find(g=>g.currency==='CNY').cpe,.5);
 assert.equal(F.creatorSummary(state,[]).groups.length,0);console.log('PASS creator efficiency: Post metrics aggregate, cooperation-price-only costs, matching denominator subsets, genuine zero/unknown, zero denominator, currency separation, no ad/coupon duplication.');
+const priority={...note(100,1000,100,10),reportedInteractions:20};
+const partial={collab:'C',price:50,views:100,likes:5,comments:null,saves:null,shares:null,follows:null};
+r=F.creatorSummary(state,[priority,partial]);assert.equal(r.data.metrics.interactions.value,25);assert.equal(r.groups[0].cpe,6);
+assert.equal(F.summarize(state,[priority,partial],state.projects).groups[0].cpe,(100+999+300+50)/25);
+assert.equal(F.interactionValue({...priority,reportedInteractions:0}),0);assert.equal(F.interactionValue({reportedInteractions:null,likes:0}),0);assert.equal(F.interactionValue({reportedInteractions:null,likes:null}),null);
+console.log('PASS interaction priority across totals/CPE: explicit total including zero, partial detail fallback, all blank unknown, no duplicate addition.');
