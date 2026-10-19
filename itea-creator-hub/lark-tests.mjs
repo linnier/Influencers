@@ -51,3 +51,18 @@ for(const data of [{has_more:false,total:0},{has_more:false},{total:0},{has_more
 for(const data of [{},{has_more:true},{has_more:false,total:2},{has_more:false,total:0,items:{}},{has_more:false,total:0,items:'bad'},null]){const badStore=new LarkStore({});badStore.request=async()=>data;await assert.rejects(badStore.list('/open-apis/bitable/v1/apps/test/tables/test/records'),/列表响应缺少items/);}
 {let page=0;const paged=new LarkStore({});paged.request=async()=>page++===0?{has_more:true,page_token:'next',items:[{id:'kept'}]}:{has_more:false,total:0};assert.deepEqual(await paged.list('/open-apis/bitable/v1/apps/test/tables/test/records'),[{id:'kept'}]);}
 console.log('PASS empty Lark pages: omitted/null items with explicit zero/terminal metadata, retained earlier pages, and rejection of positive/incomplete/malformed responses.');
+// Mutation validation and write planning reuse the same fresh snapshot.
+{
+ let snapshots=0;const original=store.snapshot.bind(store);store.snapshot=async(...args)=>{snapshots++;return original(...args)};
+ const before=await store.read();snapshots=0;const w=writes;
+ const result=await store.updateInner(before.revision,raw=>{raw.state.people[0].itea='transaction-test';return raw.state});
+ assert.equal(snapshots,2,'one validation snapshot and one provider verification, no duplicate planning read');assert.equal(writes,w+1);assert.equal(result.state.people[0].itea,'transaction-test');assert.equal(store.browseCache,null);
+ let called=false;await assert.rejects(store.updateInner(before.revision,()=>{called=true}),e=>e.status===409);assert.equal(called,false);assert.equal(writes,w+1);
+ await assert.rejects(store.updateInner(result.revision,()=>{throw Object.assign(Error('permission denied'),{status:403})}),e=>e.status===403);assert.equal(writes,w+1);
+ store.snapshot=original;
+}
+{
+ let calls=0;const paged=new LarkStore({}),all=Array.from({length:1201},(_,i)=>({id:i}));paged.request=async path=>{calls++;const u=new URL(path,'https://example.test'),size=Number(u.searchParams.get('page_size'));assert.equal(size,500);const start=Number(u.searchParams.get('page_token')||0),end=start+size;return {items:all.slice(start,end),has_more:end<all.length,page_token:String(end)}};
+ assert.deepEqual(await paged.list('/open-apis/bitable/v1/apps/test/tables/test/records'),all);assert.equal(calls,3);
+}
+console.log('PASS fresh validated mutation: 2 snapshots, stale and permission rejection before writes; 1201 records in 3 provider pages.');

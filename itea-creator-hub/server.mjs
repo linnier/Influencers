@@ -77,6 +77,8 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='GET'&&url.pathname==='/login.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(loginJS);return;}
   // Navigations use the form session. Existing API clients keep explicit Basic access.
   if(!auth.session(req)&&!(url.pathname.startsWith('/api/')&&auth.basic(req))){if(req.method==='GET'&&url.pathname==='/')redirect(res,'/login');else json(res,401,{error:'登录已过期，请重新登录'});return;}
+  // Scripts contain no account data. A valid signed session can load them without scanning workflow rows for every asset; APIs still revalidate the principal.
+  if(req.method==='GET'&&assets.has(url.pathname)){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(assets.get(url.pathname));return}
   const session=auth.session(req),actor=session?await accountsManager.principal(session):{id:'bootstrap',username:'team',role:'admin',owner:''};
   if(!actor){res.setHeader('Set-Cookie','itea_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');json(res,401,{error:'账号已停用或权限已变化，请重新登录'});return;}
   await context.run(actor,async()=>{
@@ -104,7 +106,6 @@ const server=http.createServer(async(req,res)=>{
   if(await lifecycle.handle(req,res,url))return;
   if(await workflow.handle(req,res,url))return;
   if(req.method==='GET'&&url.pathname==='/'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"});res.end(html);return}
-  if(req.method==='GET'&&assets.has(url.pathname)){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(assets.get(url.pathname));return}
   if(req.method==='GET'&&url.pathname==='/health'){json(res,200,{ok:true});return}
   if(req.method==='GET'&&url.pathname==='/api/connection'){json(res,200,lark?lark.status():{mode:'sqlite',configured:true});return}
   if(req.method==='GET'&&url.pathname==='/api/setup'){json(res,200,lark?await lark.inspect():{mode:'sqlite'});return}
@@ -119,7 +120,17 @@ const server=http.createServer(async(req,res)=>{
   let body='',size=0;for await(const chunk of req){size+=chunk.length;if(size>2*1024*1024){json(res,413,{error:'数据超过2MB上限'});return}body+=chunk;}
   if(url.pathname==='/api/import/prepare-fields'){json(res,200,lark?await lark.prepareImportFields():{added:[]});return}
   try{payload=JSON.parse(body);requireThat(lark?typeof payload.revision==='string'&&/^[a-f0-9]{64}$/.test(payload.revision):Number.isSafeInteger(payload.revision)&&payload.revision>=0,'版本号错误');if(Object.hasOwn(payload,'changes')){requireThat(url.pathname==='/api/state'&&!Object.hasOwn(payload,'state'),'变更请求不能同时提交整库资料');StateChanges.validate(payload.changes);}else validateView(payload.state)}catch(e){json(res,400,{error:e.message});return}
-  await workflow.store.lock(async()=>{const raw=await readRaw(),rows=await workflow.store.rows();checkActor(actor,rows);if(raw.revision!==payload.revision)throw Object.assign(Error('资料已更新，请刷新后重试'),{status:409});const visible=visibleState(raw.state,rows);if(Object.hasOwn(payload,'changes')){payload.state=StateChanges.apply(visible,payload.changes);validateView(payload.state);}checkOwnerChanges(actor,visible,payload.state);const full=mergeVisible(payload.state,raw.state,rows);validate(full);if(url.pathname==='/api/import/check'){if(lark)json(res,200,await lark.preflight(full,payload.revision));else json(res,200,{ok:true});return;}const result=await saveRaw(full,payload.revision);json(res,200,{...result,state:visibleState(result.state||full,rows)});});
+  await workflow.store.lock(async()=>{
+   // One fresh Lark snapshot supplies validation and the subsequent write plan.
+   if(lark&&url.pathname==='/api/state'){
+    let rows;const result=await lark.updateInner(payload.revision,async raw=>{
+     rows=await workflow.store.rows();checkActor(actor,rows);
+     const visible=visibleState(raw.state,rows),next=Object.hasOwn(payload,'changes')?StateChanges.apply(visible,payload.changes):payload.state;
+     validateView(next);checkOwnerChanges(actor,visible,next);const full=mergeVisible(next,raw.state,rows);validate(full);return full;
+    });
+    json(res,200,{...result,state:visibleState(result.state,rows)});return;
+   }
+   const raw=await readRaw(),rows=await workflow.store.rows();checkActor(actor,rows);if(raw.revision!==payload.revision)throw Object.assign(Error('资料已更新，请刷新后重试'),{status:409});const visible=visibleState(raw.state,rows);if(Object.hasOwn(payload,'changes')){payload.state=StateChanges.apply(visible,payload.changes);validateView(payload.state);}checkOwnerChanges(actor,visible,payload.state);const full=mergeVisible(payload.state,raw.state,rows);validate(full);if(url.pathname==='/api/import/check'){if(lark)json(res,200,await lark.preflight(full,payload.revision));else json(res,200,{ok:true});return;}const result=await saveRaw(full,payload.revision);json(res,200,{...result,state:visibleState(result.state||full,rows)});});
   });
  }catch(e){console.error('Request failed:',e.message);if(!res.headersSent)json(res,e.status||500,{error:e.status?e.message:'服务端错误，请稍后重试'});else res.end();}
 });
