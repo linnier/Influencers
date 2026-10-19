@@ -4,6 +4,7 @@ import {Readable} from 'node:stream';
 import {createAccounts,forbidden,visibleState,mergeVisible,checkOwnerChanges,redactState,readOnlyWorkflow,readOnlyLifecycle} from './access-control.mjs';
 import {createAdminManagement} from './admin-management.mjs';
 import './public/post-links.js';
+import './public/state-changes.js';
 import {configuredLark} from './lark-store.mjs';
 import {DatabaseSync} from 'node:sqlite';
 import {mkdirSync,readFileSync} from 'node:fs';
@@ -27,7 +28,7 @@ db.exec('CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1
 const empty={people:[],accounts:[],projects:[],collabs:[],posts:[]};db.prepare('INSERT OR IGNORE INTO workspace (id,revision,state) VALUES (1,0,?)').run(JSON.stringify(empty));
 const html=readFileSync(resolve(root,'public/index.html')),loginHTML=readFileSync(resolve(root,'public/login.html')),loginJS=readFileSync(resolve(root,'public/login.js'));
 function redirect(res,to){res.writeHead(303,{'Location':to,'Cache-Control':'no-store'});res.end();}
-const assets=new Map(['/mail-templates.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,readFileSync(resolve(root,'public'+path))]));
+const assets=new Map(['/state-changes.js','/mail-templates.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,readFileSync(resolve(root,'public'+path))]));
 const stages=['已报名','筛选中','沟通中','已确认合作','执行中','已完成','未选中','已取消'];
 function requireThat(ok,msg){if(!ok)throw Object.assign(Error(msg),{status:400})}
 function text(v,max=160){return typeof v==='string'&&v.length<=max}
@@ -85,7 +86,7 @@ const server=http.createServer(async(req,res)=>{
   if(await management.handle(req,res,url,actor,payload))return;
   if(actor.role==='viewer'){
    forbidden(req.method==='GET','查阅账号不能修改数据');forbidden(!['/api/workflow/export','/api/setup'].includes(url.pathname),'查阅账号不能导出数据或查看配置');
-   if(url.pathname==='/api/state'){const raw=await getWorkflowState({coalesce:true});json(res,200,{...raw,state:redactState(raw.state)});return;}
+   if(url.pathname==='/api/state'){const raw=await getWorkflowState({coalesce:true,browse:true,force:url.searchParams.get('fresh')==='1'||req.headers['x-data-refresh']==='1'});json(res,200,{...raw,state:redactState(raw.state)});return;}
    if(url.pathname==='/api/workflow'){const rows=await workflow.store.rows({coalesce:true});json(res,200,{ready:true,mail:await workflow.mail.status(rows),rows:readOnlyWorkflow(rows)});return;}
    if(url.pathname.startsWith('/api/lifecycle')){const [rows,current]=await Promise.all([workflow.store.rows({coalesce:true}),getWorkflowState({coalesce:true})]);const project=url.searchParams.get('project');json(res,200,readOnlyLifecycle(rows,current.state,project,lifecycle.settings(rows,project),lifecycle.reminders(current.state,rows,project)));return;}
    forbidden(!url.pathname.startsWith('/api/mail/'),'查阅账号不能使用邮箱');
@@ -109,7 +110,7 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='GET'&&url.pathname==='/api/setup'){json(res,200,lark?await lark.inspect():{mode:'sqlite'});return}
   const importRoute=['/api/import/check','/api/import/prepare-fields'].includes(url.pathname);
   if(url.pathname!=='/api/state'&&!importRoute){json(res,404,{error:'页面不存在'});return}
-  if(req.method==='GET'&&!importRoute){json(res,200,await getWorkflowState({coalesce:true}));return}
+  if(req.method==='GET'&&!importRoute){json(res,200,await getWorkflowState({coalesce:true,browse:true,force:url.searchParams.get('fresh')==='1'||req.headers['x-data-refresh']==='1'}));return}
   if(req.method!=='POST'){json(res,405,{error:'不支持该请求'});return}
   // Credentials are only safe with same-origin writes. Proxy deployments preserve the external Host.
   let origin;try{origin=new URL(req.headers.origin||'')}catch{json(res,403,{error:'请求来源不合法'});return}
@@ -117,8 +118,8 @@ const server=http.createServer(async(req,res)=>{
   if(!(req.headers['content-type']||'').startsWith('application/json')){json(res,415,{error:'需要JSON请求'});return}
   let body='',size=0;for await(const chunk of req){size+=chunk.length;if(size>2*1024*1024){json(res,413,{error:'数据超过2MB上限'});return}body+=chunk;}
   if(url.pathname==='/api/import/prepare-fields'){json(res,200,lark?await lark.prepareImportFields():{added:[]});return}
-  try{payload=JSON.parse(body);requireThat(lark?typeof payload.revision==='string'&&/^[a-f0-9]{64}$/.test(payload.revision):Number.isSafeInteger(payload.revision)&&payload.revision>=0,'版本号错误');validateView(payload.state)}catch(e){json(res,400,{error:e.message});return}
-  await workflow.store.lock(async()=>{const raw=await readRaw(),rows=await workflow.store.rows();checkActor(actor,rows);if(raw.revision!==payload.revision)throw Object.assign(Error('资料已更新，请刷新后重试'),{status:409});checkOwnerChanges(actor,visibleState(raw.state,rows),payload.state);const full=mergeVisible(payload.state,raw.state,rows);validate(full);if(url.pathname==='/api/import/check'){if(lark)json(res,200,await lark.preflight(full,payload.revision));else json(res,200,{ok:true});return;}const result=await saveRaw(full,payload.revision);json(res,200,{...result,state:visibleState(result.state||full,rows)});});
+  try{payload=JSON.parse(body);requireThat(lark?typeof payload.revision==='string'&&/^[a-f0-9]{64}$/.test(payload.revision):Number.isSafeInteger(payload.revision)&&payload.revision>=0,'版本号错误');if(Object.hasOwn(payload,'changes')){requireThat(url.pathname==='/api/state'&&!Object.hasOwn(payload,'state'),'变更请求不能同时提交整库资料');StateChanges.validate(payload.changes);}else validateView(payload.state)}catch(e){json(res,400,{error:e.message});return}
+  await workflow.store.lock(async()=>{const raw=await readRaw(),rows=await workflow.store.rows();checkActor(actor,rows);if(raw.revision!==payload.revision)throw Object.assign(Error('资料已更新，请刷新后重试'),{status:409});const visible=visibleState(raw.state,rows);if(Object.hasOwn(payload,'changes')){payload.state=StateChanges.apply(visible,payload.changes);validateView(payload.state);}checkOwnerChanges(actor,visible,payload.state);const full=mergeVisible(payload.state,raw.state,rows);validate(full);if(url.pathname==='/api/import/check'){if(lark)json(res,200,await lark.preflight(full,payload.revision));else json(res,200,{ok:true});return;}const result=await saveRaw(full,payload.revision);json(res,200,{...result,state:visibleState(result.state||full,rows)});});
   });
  }catch(e){console.error('Request failed:',e.message);if(!res.headersSent)json(res,e.status||500,{error:e.status?e.message:'服务端错误，请稍后重试'});else res.end();}
 });

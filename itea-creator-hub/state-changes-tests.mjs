@@ -1,0 +1,13 @@
+import assert from 'node:assert/strict';
+import './public/state-changes.js';
+const base={people:[],accounts:[],projects:[],collabs:[],posts:Array.from({length:1000},(_,i)=>({id:'P'+i,title:'Test post '+i,views:i}))};
+const next=structuredClone(base);next.posts[500].views=9000;
+const changes=StateChanges.diff(base,next);
+assert.equal(changes.length,1);assert.equal(changes[0].record.id,'P500');
+assert.deepEqual(StateChanges.apply(base,changes),next);assert.equal(base.posts[500].views,500);
+assert(JSON.stringify(changes).length<JSON.stringify(next).length/100);
+for(const bad of [[...changes,...changes], [{entity:'secrets',op:'add',record:{id:'x'}}], [{entity:'posts',op:'delete',record:{id:'P1'}}]])assert.throws(()=>StateChanges.apply(base,bad),e=>e.status===400);
+assert.throws(()=>StateChanges.apply(base,[{entity:'posts',op:'add',record:{id:'P1'}}]),/已存在/);
+assert.throws(()=>StateChanges.apply(base,[{entity:'posts',op:'update',record:{id:'missing'}}]),/不存在/);
+const removed=structuredClone(base);removed.posts.pop();assert.throws(()=>StateChanges.diff(base,removed),/回收站/);
+console.log('PASS changed-record uploads: one edit among 1000 records, immutable reconstruction, duplicate/unknown/delete/add/update validation.');

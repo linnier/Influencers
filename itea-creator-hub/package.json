@@ -1,6 +1,6 @@
 {
   "name": "creator-collaboration-hub",
-  "version": "2.6.5",
+  "version": "2.6.6",
   "private": true,
   "type": "module",
   "engines": {
@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "check": "node --check server.mjs && node --check client-check.js && node --check lark-store.mjs && node --check setup-local.mjs && node --check public/bulk-core.js && node --check public/bulk-ui.js && node --check public/finance.js && node --check public/creator-import.js && node --check public/project-workflow.js && node --check public/post-links.js && node --check public/multi-import.js && node --check auth.mjs && node --check public/login.js && node --check workflow.mjs && node --check workflow-store.mjs && node --check lark-mail.mjs && node --check public/invite-workflow.js && node --check public/apply.js && node --check lifecycle.mjs && node --check public/lifecycle-ui.js && node --check public/creator-public.js && node --check intake-autofill.mjs && node --check public/ui-preferences.js && node --check workflow-store.mjs && node --check access-control.mjs && node --check admin-management.mjs && node --check public/admin-ui.js && node --check public/mail-templates.js",
+    "check": "node --check server.mjs && node --check client-check.js && node --check lark-store.mjs && node --check setup-local.mjs && node --check public/bulk-core.js && node --check public/bulk-ui.js && node --check public/finance.js && node --check public/creator-import.js && node --check public/project-workflow.js && node --check public/post-links.js && node --check public/multi-import.js && node --check auth.mjs && node --check public/login.js && node --check workflow.mjs && node --check workflow-store.mjs && node --check lark-mail.mjs && node --check public/invite-workflow.js && node --check public/apply.js && node --check lifecycle.mjs && node --check public/lifecycle-ui.js && node --check public/creator-public.js && node --check intake-autofill.mjs && node --check public/ui-preferences.js && node --check workflow-store.mjs && node --check access-control.mjs && node --check admin-management.mjs && node --check public/admin-ui.js && node --check public/mail-templates.js && node --check public/state-changes.js",
     "test": "node tests.mjs",
     "test:lark": "node lark-tests.mjs",
     "start:lan": "node setup-local.mjs",
@@ -27,7 +27,7 @@
     "test:lifecycle": "node lifecycle-tests.mjs && node lifecycle-ui-tests.mjs",
     "test:autofill": "node intake-autofill-tests.mjs && node intake-autofill-ui-tests.mjs",
     "test:submission": "node creator-submission-ui-tests.mjs",
-    "test:performance": "node performance-tests.mjs",
+    "test:performance": "node performance-tests.mjs && node read-cache-tests.mjs && node state-changes-tests.mjs",
     "test:access": "node access-control-tests.mjs && node admin-ui-tests.mjs",
     "test:fixed-post": "node fixed-post-tests.mjs && node fixed-post-ui-tests.mjs",
     "test:mail-templates": "node mail-template-tests.mjs"
