@@ -52,3 +52,5 @@ for(const platform of ['TikTok','小红书']){
  const other=structuredClone(source);other.people.push({...other.people[0],id:'OTHER',itea:'other'});other.accounts.push({...planned.state.accounts.at(-1),person:'OTHER'});r.accountId=other.accounts.at(-1).id;assert(B.plan(change,other,settings,id).errors.some(e=>e.includes('不同达人')));
 }
 console.log('PASS IG to TikTok/XHS: explicit identity/accounting confirmation, same-person matching, original record preservation, no implicit duplicate fees/coupons and source-platform audit.');
+
+const manual=read([newPost]);manual.rows[0].manualAccount=true;assert(B.plan(manual,old,{...opts,projectId:old.projects[0].id},id).errors.some(e=>e.includes('这个平台账号已在库中')));manual.rows[0].accountId=old.accounts[0].id;assert.equal(B.plan(manual,old,{...opts,projectId:old.projects[0].id},id).errors.length,0);
