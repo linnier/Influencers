@@ -1,6 +1,6 @@
 {
   "name": "creator-collaboration-hub",
-  "version": "2.6.18",
+  "version": "2.6.19",
   "private": true,
   "type": "module",
   "engines": {
@@ -8,7 +8,7 @@
   },
   "scripts": {
     "start": "node server.mjs",
-    "check": "node --check server.mjs && node --check client-check.js && node --check lark-store.mjs && node --check setup-local.mjs && node --check public/bulk-core.js && node --check public/bulk-ui.js && node --check public/finance.js && node --check public/creator-import.js && node --check public/project-workflow.js && node --check public/post-links.js && node --check public/multi-import.js && node --check auth.mjs && node --check public/login.js && node --check workflow.mjs && node --check workflow-store.mjs && node --check lark-mail.mjs && node --check public/invite-workflow.js && node --check public/apply.js && node --check lifecycle.mjs && node --check public/lifecycle-ui.js && node --check public/creator-public.js && node --check intake-autofill.mjs && node --check public/ui-preferences.js && node --check workflow-store.mjs && node --check access-control.mjs && node --check admin-management.mjs && node --check public/admin-ui.js && node --check public/mail-templates.js && node --check public/state-changes.js",
+    "check": "node --check server.mjs && node --check client-check.js && node --check lark-store.mjs && node --check setup-local.mjs && node --check public/bulk-core.js && node --check public/bulk-ui.js && node --check public/finance.js && node --check public/creator-import.js && node --check public/project-workflow.js && node --check public/post-links.js && node --check public/multi-import.js && node --check auth.mjs && node --check public/login.js && node --check workflow.mjs && node --check workflow-store.mjs && node --check lark-mail.mjs && node --check public/invite-workflow.js && node --check public/apply.js && node --check lifecycle.mjs && node --check public/lifecycle-ui.js && node --check public/creator-public.js && node --check intake-autofill.mjs && node --check public/ui-preferences.js && node --check workflow-store.mjs && node --check access-control.mjs && node --check admin-management.mjs && node --check public/admin-ui.js && node --check public/mail-templates.js && node --check public/state-changes.js && node --check public/cooperation-status.js",
     "test": "node tests.mjs",
     "test:lark": "node lark-tests.mjs",
     "start:lan": "node setup-local.mjs",
@@ -32,7 +32,8 @@
     "test:fixed-post": "node fixed-post-tests.mjs && node fixed-post-ui-tests.mjs && node tests/platform-switch.cjs",
     "test:mail-templates": "node mail-template-tests.mjs",
     "test:easy-import": "node easy-import-tests.mjs && node easy-import-ui-tests.mjs",
-    "test:voucher-allocation": "node voucher-allocation-tests.mjs && node voucher-allocation-ui-tests.mjs"
+    "test:voucher-allocation": "node voucher-allocation-tests.mjs && node voucher-allocation-ui-tests.mjs",
+    "test:cooperation": "node cooperation-status-tests.mjs && node coupon-correction-tests.mjs && node cooperation-ui-tests.mjs"
   },
   "devDependencies": {
     "jsdom": "26.1.0"

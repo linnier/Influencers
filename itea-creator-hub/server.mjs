@@ -28,7 +28,7 @@ db.exec('CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1
 const empty={people:[],accounts:[],projects:[],collabs:[],posts:[]};db.prepare('INSERT OR IGNORE INTO workspace (id,revision,state) VALUES (1,0,?)').run(JSON.stringify(empty));
 const html=readFileSync(resolve(root,'public/index.html')),loginHTML=readFileSync(resolve(root,'public/login.html')),loginJS=readFileSync(resolve(root,'public/login.js'));
 function redirect(res,to){res.writeHead(303,{'Location':to,'Cache-Control':'no-store'});res.end();}
-const assets=new Map(['/state-changes.js','/mail-templates.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,readFileSync(resolve(root,'public'+path))]));
+const assets=new Map(['/cooperation-status.js','/state-changes.js','/mail-templates.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,readFileSync(resolve(root,'public'+path))]));
 const stages=['已报名','筛选中','沟通中','已确认合作','执行中','已完成','未选中','已取消'];
 function requireThat(ok,msg){if(!ok)throw Object.assign(Error(msg),{status:400})}
 function text(v,max=160){return typeof v==='string'&&v.length<=max}
@@ -130,11 +130,11 @@ const server=http.createServer(async(req,res)=>{
     let rows;const result=await lark.updateInner(payload.revision,async raw=>{
      rows=await workflow.store.rows();checkActor(actor,rows);
      const visible=visibleState(raw.state,rows),next=Object.hasOwn(payload,'changes')?StateChanges.apply(visible,payload.changes):payload.state;
-     validateView(next);checkOwnerChanges(actor,visible,next);const full=mergeVisible(next,raw.state,rows);validate(full);return full;
+     validateView(next);checkOwnerChanges(actor,visible,next);CooperationStatus.checkCompletionChanges(visible,next,rows);const full=mergeVisible(next,raw.state,rows);validate(full);return full;
     });
     json(res,200,{...result,state:visibleState(result.state,rows)});return;
    }
-   const raw=await readRaw(),rows=await workflow.store.rows();checkActor(actor,rows);if(raw.revision!==payload.revision)throw Object.assign(Error('资料已更新，请刷新后重试'),{status:409});const visible=visibleState(raw.state,rows);if(Object.hasOwn(payload,'changes')){payload.state=StateChanges.apply(visible,payload.changes);validateView(payload.state);}checkOwnerChanges(actor,visible,payload.state);const full=mergeVisible(payload.state,raw.state,rows);validate(full);if(url.pathname==='/api/import/check'){if(lark)json(res,200,await lark.preflight(full,payload.revision));else json(res,200,{ok:true});return;}const result=await saveRaw(full,payload.revision);json(res,200,{...result,state:visibleState(result.state||full,rows)});});
+   const raw=await readRaw(),rows=await workflow.store.rows();checkActor(actor,rows);if(raw.revision!==payload.revision)throw Object.assign(Error('资料已更新，请刷新后重试'),{status:409});const visible=visibleState(raw.state,rows);if(Object.hasOwn(payload,'changes')){payload.state=StateChanges.apply(visible,payload.changes);validateView(payload.state);}checkOwnerChanges(actor,visible,payload.state);CooperationStatus.checkCompletionChanges(visible,payload.state,rows);const full=mergeVisible(payload.state,raw.state,rows);validate(full);if(url.pathname==='/api/import/check'){if(lark)json(res,200,await lark.preflight(full,payload.revision));else json(res,200,{ok:true});return;}const result=await saveRaw(full,payload.revision);json(res,200,{...result,state:visibleState(result.state||full,rows)});});
   });
  }catch(e){console.error('Request failed:',e.message);if(!res.headersSent)json(res,e.status||500,{error:e.status?e.message:'服务端错误，请稍后重试'});else res.end();}
 });
