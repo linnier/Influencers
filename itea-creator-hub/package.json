@@ -1,6 +1,6 @@
 {
   "name": "creator-collaboration-hub",
-  "version": "2.6.12",
+  "version": "2.6.13",
   "private": true,
   "type": "module",
   "engines": {
@@ -29,7 +29,7 @@
     "test:submission": "node creator-submission-ui-tests.mjs",
     "test:performance": "node performance-tests.mjs && node read-cache-tests.mjs && node state-changes-tests.mjs",
     "test:access": "node access-control-tests.mjs && node admin-ui-tests.mjs",
-    "test:fixed-post": "node fixed-post-tests.mjs && node fixed-post-ui-tests.mjs",
+    "test:fixed-post": "node fixed-post-tests.mjs && node fixed-post-ui-tests.mjs && node tests/platform-switch.cjs",
     "test:mail-templates": "node mail-template-tests.mjs"
   },
   "devDependencies": {

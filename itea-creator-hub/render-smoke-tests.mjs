@@ -20,7 +20,7 @@ async function check(configured){
   r=await fetch(url+'/auth/login',{method:'POST',headers:{Origin:url,'Content-Type':'application/json'},body:JSON.stringify({username:'team',password:testPassword})});assert.equal(r.status,200);headers={Cookie:r.headers.getSetCookie().map(c=>c.split(';')[0]).join('; ')};
   r=await fetch(url+'/',{headers});assert.equal(r.status,200);assert((await r.text()).includes('project-workflow.js'));
   r=await fetch(url+'/project-workflow.js',{headers});assert.equal(r.status,200);assert((await r.text()).includes('ProjectWorkflow'));
-  r=await fetch(url+'/api/connection',{headers});const connection=await r.json();assert.equal(connection.mode,'lark');assert.equal(connection.configured,configured);assert.equal(connection.build,'2.6.12');assert.equal(connection.automaticWriteBatches,true);assert(!JSON.stringify(connection).includes('SYNTHETIC_SECRET'));
+  r=await fetch(url+'/api/connection',{headers});const connection=await r.json();assert.equal(connection.mode,'lark');assert.equal(connection.configured,configured);assert.equal(connection.build,'2.6.13');assert.equal(connection.automaticWriteBatches,true);assert(!JSON.stringify(connection).includes('SYNTHETIC_SECRET'));
   if(!configured){r=await fetch(url+'/api/state',{headers});assert.equal(r.status,503);assert((await r.json()).error.includes('尚未配置'));}
  }finally{
   const exit=new Promise(r=>child.once('exit',r));if(child.exitCode===null){child.kill('SIGTERM');await exit;}rmSync(dir,{recursive:true,force:true});
