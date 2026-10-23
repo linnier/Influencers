@@ -1,14 +1,20 @@
 import assert from 'node:assert/strict';import fs from 'node:fs';import vm from 'node:vm';
 const ctx={};vm.createContext(ctx);vm.runInContext(fs.readFileSync(new URL('public/finance.js',import.meta.url),'utf8'),ctx);const F=ctx.FeeOverview;
-const state={projects:[{id:'P',currency:'SGD'}],collabs:[{id:'C',project:'P'}]};const note=(price,exposure,views,n)=>({collab:'C',price,exposure,views,likes:n,comments:0,saves:0,shares:0,follows:0,reportedInteractions:null,paidCost:999,voucherCount:100});
-let r=F.creatorSummary(state,[note(100,1000,100,10),note(0,3000,300,30),note(null,2000,600,60)]);assert.equal(r.data.metrics.views.value,1000);assert.equal(r.data.metrics.interactions.value,100);assert.equal(r.groups[0].price,100);assert.equal(r.groups[0].priceKnown,2);assert.equal(r.groups[0].cpm,25);assert.equal(r.groups[0].cpe,2.5);assert.equal(r.groups[0].cpeKnown,2);
-r=F.creatorSummary(state,[note(0,0,0,0)]);assert.equal(r.groups[0].price,0);assert.equal(r.groups[0].cpm,null);assert.equal(r.groups[0].cpe,null);
-r=F.creatorSummary(state,[{collab:'C',price:null,views:null,exposure:null,likes:null,comments:null,saves:null,shares:null}]);assert.equal(r.data.metrics.views.value,null);assert.equal(r.data.metrics.interactions.value,null);assert.equal(r.groups[0].price,null);assert.equal(r.groups[0].cpe,null);
-r=F.creatorSummary(state,[note(100,1000,100,10),{...note(10,2000,200,20),currency:'CNY'}]);assert.equal(r.groups.length,2);assert.equal(r.groups.find(g=>g.currency==='SGD').cpe,10);assert.equal(r.groups.find(g=>g.currency==='CNY').cpe,.5);
-assert.equal(F.creatorSummary(state,[]).groups.length,0);console.log('PASS creator efficiency: Post metrics aggregate, cooperation-price-only costs, matching denominator subsets, genuine zero/unknown, zero denominator, currency separation, no ad/coupon duplication.');
-const priority={...note(100,1000,100,10),reportedInteractions:20};
-const partial={collab:'C',price:50,views:100,likes:5,comments:null,saves:null,shares:null,follows:null};
-r=F.creatorSummary(state,[priority,partial]);assert.equal(r.data.metrics.interactions.value,25);assert.equal(r.groups[0].cpe,6);
-assert.equal(F.summarize(state,[priority,partial],state.projects).groups[0].cpe,(100+999+300+50)/25);
-assert.equal(F.interactionValue({...priority,reportedInteractions:0}),0);assert.equal(F.interactionValue({reportedInteractions:null,likes:0}),0);assert.equal(F.interactionValue({reportedInteractions:null,likes:null}),null);
-console.log('PASS interaction priority across totals/CPE: explicit total including zero, partial detail fallback, all blank unknown, no duplicate addition.');
+const state={projects:[{id:'P',currency:'SGD'}],collabs:[{id:'C',project:'P',person:'D',agreedPrice:0}]},post=(o={})=>({id:'N',collab:'C',price:null,voucherCount:null,views:4114,exposure:10000,reportedInteractions:202,paidCost:999,...o}),issue={project:'P',person:'D',quantity:10},summary=(rows,extra={},s=state)=>F.creatorSummary(s,rows,{manualIssues:[issue],...extra});
+let r=summary([post()]);assert.equal(r.groups[0].price,30);assert.equal(r.groups[0].coop,0);assert.equal(r.groups[0].voucher,30);assert.equal(r.groups[0].cpe,30/202);assert.equal(r.groups[0].cpm,3);assert.equal(r.data.metrics.views.value,4114);
+r=summary([post({price:100})]);assert.equal(r.groups[0].price,130);assert.equal(r.groups[0].cpe,130/202); // ads excluded
+const agreed={...state,collabs:[{...state.collabs[0],agreedPrice:200}]};assert.equal(summary([post()],{},agreed).groups[0].price,230);assert.equal(summary([post({price:100})],{},agreed).groups[0].price,130); // no duplicate agreed fee
+const two={...state,collabs:[...state.collabs,{id:'C2',project:'P',person:'D',agreedPrice:null,importedVoucherCount:2}]};r=summary([post({voucherCount:3}),post({id:'N2',collab:'C2',price:20})],{selectedCollabs:two.collabs},two);assert.equal(r.groups[0].price,65);assert.equal(r.groups[0].voucher,45);assert.equal(r.groups[0].cpe,65/404);
+const allocated={...two,collabs:[{...two.collabs[0],voucherCostOverride:7.25},two.collabs[1]]};r=summary([post({voucherCount:3}),post({collab:'C2',price:20})],{selectedCollabs:allocated.collabs},allocated);assert.equal(r.groups[0].price,27.25);assert.equal(r.groups[0].voucher,7.25);
+r=summary([post()],{}, {...state,collabs:[{...state.collabs[0],agreedPrice:null}]});assert.equal(r.groups[0].price,30);assert.equal(r.groups[0].coop,null);
+r=summary([post({price:0,voucherCount:0})],{manualIssues:[]});assert.equal(r.groups[0].price,0);assert.equal(r.groups[0].cpe,0);assert.equal(r.groups[0].cpm,0);
+r=summary([post({price:null,voucherCount:null})],{manualIssues:[]},{...state,collabs:[{id:'C',project:'P',person:'D'}]});assert.equal(r.groups[0].price,null);assert.equal(r.groups[0].cpe,null);
+r=summary([post({exposure:null})]);assert.equal(r.groups[0].price,30);assert.equal(r.groups[0].cpm,null);assert.equal(r.groups[0].cpe,30/202);
+r=summary([post(),post({id:'N2',reportedInteractions:null,likes:null})]);assert.equal(r.groups[0].cpe,null);assert.equal(r.groups[0].cpeKnown,1); // never divide full costs by partial data
+r=summary([post({reportedInteractions:0,exposure:0})]);assert.equal(r.groups[0].cpe,null);assert.equal(r.groups[0].cpm,null);
+r=summary([post({reportedInteractions:null,likes:5,comments:2})]);assert.equal(r.groups[0].cpe,30/7);
+r=summary([post()],{workflowReady:false});assert.equal(r.groups[0].cpe,null);assert.equal(r.groups[0].workflowReady,false);
+const cny={...state,projects:[{id:'P',currency:'CNY'}]};r=summary([post({price:100})],{},cny);assert.equal(r.groups.length,2);assert.equal(r.groups.find(g=>g.currency==='CNY').price,100);assert.equal(r.groups.find(g=>g.currency==='SGD').price,30);assert.equal(r.groups.find(g=>g.currency==='CNY').cpe,100/202);assert.equal(r.groups.find(g=>g.currency==='SGD').cpe,30/202);
+r=summary([post()],{manualIssues:[issue,{project:'OTHER',person:'D',quantity:99},{project:'P',person:'OTHER',quantity:99}]});assert.equal(r.groups[0].price,30);assert.equal(F.creatorSummary(state,[]).groups.length,0);
+assert.equal(F.interactionValue({reportedInteractions:0,likes:9}),0);assert.equal(F.interactionValue({reportedInteractions:null,likes:0}),0);assert.equal(F.interactionValue({reportedInteractions:null,likes:null}),null);
+console.log('PASS creator total cost: actual/manual/historical coupons, allocation override, confirmed fee fallback without duplication, zero/unknown, per-person/project scope, currency separation, complete denominators, pending sync and interaction priority.');

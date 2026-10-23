@@ -1,6 +1,6 @@
 {
   "name": "creator-collaboration-hub",
-  "version": "2.6.19",
+  "version": "2.6.20",
   "private": true,
   "type": "module",
   "engines": {
@@ -17,7 +17,7 @@
     "test:release": "node release-tests.mjs",
     "test:multi": "node multi-tests.mjs",
     "test:workflow": "node tests/workflow.cjs && node tests/account-binding-batches.cjs",
-    "test:creator": "node creator-summary-tests.mjs",
+    "test:creator": "node creator-summary-tests.mjs && node creator-cost-ui-tests.mjs",
     "test:bulk-ui": "node tests/bulk-single.cjs",
     "test:batch": "node tests/bulk-canonical.cjs && node tests/bulk-drafts.cjs",
     "test:render": "node render-smoke-tests.mjs",
