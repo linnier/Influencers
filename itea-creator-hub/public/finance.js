@@ -16,8 +16,8 @@ function excelVoucherPeople(input,state,projectId){
   candidates=state.accounts.filter(a=>a.id===r.sourceAccountId||a.platform===r.platform&&handle&&root.CreatorImport.handle(a.handle,a.platform)===root.CreatorImport.handle(handle,r.platform)||a.platform===(r.sourcePlatform||r.platform)&&sourceHandle&&root.CreatorImport.handle(a.handle,a.platform)===sourceHandle).map(a=>a.person);
   if(!candidates.length){const itea=norm(r.iteaOverride??r.itea);if(itea)candidates=state.people.filter(p=>norm(p.itea)===itea).map(p=>p.id);}
  }
- const unique=[...new Set(candidates)];if(unique.length!==1||!state.collabs.some(c=>c.project===projectId&&c.person===unique[0]&&!['已取消','未选中'].includes(c.stage)))unresolved.push(r.excelRow);else ids.add(unique[0]);
- }if(unresolved.length)throw Error('Excel第 '+[...new Set(unresolved)].slice(0,15).join('、')+' 行尚未唯一匹配到本项目达人；请先导入或核对账号后再分摊，当前未保存费用');return [...ids];
+ const unique=[...new Set(candidates)];if(unique.length!==1||!state.collabs.some(c=>c.project===projectId&&c.person===unique[0]&&!['已取消','未选中'].includes(c.stage)))unresolved.push({key:r.key,name:r.name,platform:r.platform,sheet:r.sheet,excelRow:r.excelRow,reason:unique.length>1?'匹配到多位达人，请选择正确归属':unique.length===0?'尚未匹配库内达人，请先导入或关联账号':'达人尚无本项目有效合作，请先导入项目合作'});else ids.add(unique[0]);
+ }if(unresolved.length)throw Object.assign(Error('Excel第 '+[...new Set(unresolved.map(r=>r.excelRow))].slice(0,15).join('、')+' 行尚未唯一匹配到本项目达人；请先导入或核对账号后再分摊，当前未保存费用'),{unresolvedRows:unresolved});return [...ids];
 }
 function allocationPlan(state,projectId,personIds,rawTotal,source){
  const value=String(rawTotal??'').trim();if(!/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(value))throw Error('请填写券包总费用，最多两位小数；未知请留空');const cents=Math.round(Number(value)*100);if(!Number.isSafeInteger(cents)||cents>1e10)throw Error('券包总费用超过支持范围');
