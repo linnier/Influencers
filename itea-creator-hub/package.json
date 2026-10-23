@@ -1,6 +1,6 @@
 {
   "name": "creator-collaboration-hub",
-  "version": "2.6.20",
+  "version": "2.6.21",
   "private": true,
   "type": "module",
   "engines": {
@@ -33,7 +33,8 @@
     "test:mail-templates": "node mail-template-tests.mjs",
     "test:easy-import": "node easy-import-tests.mjs && node easy-import-ui-tests.mjs",
     "test:voucher-allocation": "node voucher-allocation-tests.mjs && node voucher-allocation-ui-tests.mjs",
-    "test:cooperation": "node cooperation-status-tests.mjs && node coupon-correction-tests.mjs && node cooperation-ui-tests.mjs"
+    "test:cooperation": "node cooperation-status-tests.mjs && node coupon-correction-tests.mjs && node cooperation-ui-tests.mjs",
+    "test:report": "node creator-report-tests.mjs && node creator-report-ui-tests.mjs"
   },
   "devDependencies": {
     "jsdom": "26.1.0"
