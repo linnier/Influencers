@@ -67,7 +67,7 @@ const validateView=state=>validate(state,{view:true}),hooks={};
 workflow=createWorkflow({lark,db,auth,validate:validateView,getState:getWorkflowState,saveState:saveWorkflowState,hooks});
 accountsManager=createAccounts({store:workflow.store});
 const management=createAdminManagement({store:workflow.store,accounts:accountsManager,readRaw,saveRaw,validate,checkActor});
-const lifecycle=createLifecycle({store:workflow.store,mail:workflow.mail,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,key:process.env.LARK_APP_SECRET||password||'local-workflow-development',baseURL:process.env.PUBLIC_BASE_URL||process.env.RENDER_EXTERNAL_URL,authorizeMutation:authorizeCurrent});
+const lifecycle=createLifecycle({reviewer:()=>context.getStore()?.username||'team',store:workflow.store,mail:workflow.mail,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,key:process.env.LARK_APP_SECRET||password||'local-workflow-development',baseURL:process.env.PUBLIC_BASE_URL||process.env.RENDER_EXTERNAL_URL,authorizeMutation:authorizeCurrent});
 hooks.authorize=authorizeCurrent;hooks.confirmed=lifecycle.confirmed;hooks.issued=lifecycle.issued;
 const reminderTimer=setInterval(()=>void lifecycle.tick(),60000);reminderTimer.unref();
 const server=http.createServer(async(req,res)=>{
