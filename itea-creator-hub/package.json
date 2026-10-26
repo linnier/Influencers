@@ -1,6 +1,6 @@
 {
   "name": "creator-collaboration-hub",
-  "version": "2.6.25",
+  "version": "2.6.26",
   "private": true,
   "type": "module",
   "engines": {
@@ -36,7 +36,8 @@
     "test:cooperation": "node cooperation-status-tests.mjs && node coupon-correction-tests.mjs && node cooperation-ui-tests.mjs",
     "test:report": "node creator-report-tests.mjs && node creator-report-ui-tests.mjs",
     "test:import-skips": "node import-skips-ui-tests.mjs",
-    "test:report-edit": "node report-edit-tests.mjs && node report-edit-ui-tests.mjs"
+    "test:report-edit": "node report-edit-tests.mjs && node report-edit-ui-tests.mjs",
+    "test:entry-regions": "node entry-regions-tests.mjs && node bilingual-entry-ui-tests.mjs"
   },
   "devDependencies": {
     "jsdom": "26.1.0"
