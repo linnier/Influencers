@@ -16,7 +16,7 @@ export function createIntakeAutofill({store,mail,getState,key,profile,json,body,
   const m=url.pathname.match(/^\/api\/creator\/entry\/([\w.-]+)\/autofill\/(request|verify)$/);if(!m)return false;
   check(req.method==='POST','请求方法无效');origin(req);rate(req);const v=await body(req);check(v&&typeof v==='object'&&!Array.isArray(v),'提交格式错误');cleanup();
   // Validation of the signed form link is delegated to the caller, with no business-state read for metadata GETs.
-  const rows=await store.rows(),form=rows.find(r=>r.kind==='intake-form'&&r.id===formId);
+  const candidate=store.get?await store.get(formId):null,form=store.get?(candidate?.kind==='intake-form'?candidate:null):(await store.rows()).find(r=>r.kind==='intake-form'&&r.id===formId);
   check(form?.enabled,'链接不存在或暂未开放申请 / This form is unavailable');
   check(typeof v.itea==='string'&&v.itea.trim()&&v.itea.length<=120&&validEmail(v.email),'请填写 itea 账号与有效的原登记邮箱 / Enter your itea account and a valid registered email');
   const identity=digest(JSON.stringify([form.id,normalize(v.itea),normalize(v.email)]));

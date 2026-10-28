@@ -1,0 +1,5 @@
+import {gzipSync} from 'node:zlib';
+// Only static HTML/scripts are compressed. Personalized API responses remain unchanged.
+export function prepareAsset(value){const raw=Buffer.isBuffer(value)?value:Buffer.from(value),compressed=raw.length>=1024?gzipSync(raw):null;return {raw,gzip:compressed&&compressed.length<raw.length?compressed:null};}
+export function acceptsGzip(value){const weights=new Map();for(const item of String(value||'').split(',')){const [name,...params]=item.trim().toLowerCase().split(';');if(!name)continue;const q=params.map(v=>v.trim()).find(v=>v.startsWith('q=')),weight=q===undefined?1:Number(q.slice(2));weights.set(name,Number.isFinite(weight)&&weight>=0&&weight<=1?weight:0);}return (weights.has('gzip')?weights.get('gzip'):weights.get('*')||0)>0;}
+export function sendPrepared(req,res,asset,headers){const compressed=asset.gzip&&acceptsGzip(req.headers?.['accept-encoding']),body=compressed?asset.gzip:asset.raw;res.writeHead(200,{...headers,Vary:'Accept-Encoding','Content-Length':body.length,...(compressed?{'Content-Encoding':'gzip'}:{})});res.end(body);}

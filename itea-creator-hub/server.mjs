@@ -1,3 +1,4 @@
+import {prepareAsset,sendPrepared} from './http-assets.mjs';
 import http from 'node:http';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {Readable} from 'node:stream';
@@ -26,9 +27,9 @@ const dataDir=resolve(process.env.DATA_DIR||resolve(root,'data'));mkdirSync(data
 const db=new DatabaseSync(resolve(dataDir,'creator-hub.sqlite'));db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;');
 db.exec('CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, state TEXT NOT NULL); CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, changed_at TEXT NOT NULL);');
 const empty={people:[],accounts:[],projects:[],collabs:[],posts:[]};db.prepare('INSERT OR IGNORE INTO workspace (id,revision,state) VALUES (1,0,?)').run(JSON.stringify(empty));
-const html=readFileSync(resolve(root,'public/index.html')),loginHTML=readFileSync(resolve(root,'public/login.html')),loginJS=readFileSync(resolve(root,'public/login.js'));
+const html=prepareAsset(readFileSync(resolve(root,'public/index.html'))),loginHTML=prepareAsset(readFileSync(resolve(root,'public/login.html'))),loginJS=prepareAsset(readFileSync(resolve(root,'public/login.js')));
 function redirect(res,to){res.writeHead(303,{'Location':to,'Cache-Control':'no-store'});res.end();}
-const assets=new Map(['/cooperation-status.js','/state-changes.js','/mail-templates.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,readFileSync(resolve(root,'public'+path))]));
+const assets=new Map(['/cooperation-status.js','/state-changes.js','/mail-templates.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,prepareAsset(readFileSync(resolve(root,'public'+path)))]));
 const stages=['已报名','筛选中','沟通中','已确认合作','执行中','已完成','未选中','已取消'];
 function requireThat(ok,msg){if(!ok)throw Object.assign(Error(msg),{status:400})}
 function text(v,max=160){return typeof v==='string'&&v.length<=max}
@@ -62,7 +63,7 @@ const saveWorkflowState=async(state,revision)=>{
  if(lark){let rows;const result=await lark.updateInner(revision,async raw=>{rows=await workflow.store.rows();checkActor(context.getStore()||{role:'system'},rows);const active=visibleState(raw.state,rows);checkOwnerChanges(context.getStore()||{role:'system'},active,state);const full=mergeVisible(state,raw.state,rows);validate(full);return full;});return {...result,state:visibleState(result.state,rows)};}
  const raw=await readRaw(),rows=await workflow.store.rows();if(raw.revision!==revision)throw Object.assign(Error('资料已更新，请刷新后重新提交'),{status:409});const active=visibleState(raw.state,rows);checkOwnerChanges(context.getStore()||{role:'system'},active,state);const full=mergeVisible(state,raw.state,rows);validate(full);const result=await saveRaw(full,revision);return {...result,state:state}};
 function checkActor(actor,rows){if(actor.id==='bootstrap'||actor.role==='system')return;const live=rows.find(r=>r.kind==='user'&&r.id===actor.id);forbidden(live&&live.enabled!==false&&(live.version||1)===actor.version,'账号或权限已变化，请重新登录');}
-async function authorizeCurrent(path,payload,rows,state){const actor=context.getStore();if(!actor)return;checkActor(actor,rows);if(actor.role==='admin')return;forbidden(actor.role==='owner');forbidden(!['/api/lifecycle/form','/api/lifecycle/intake-review'].includes(path),'全局入库设置由管理员管理');let project=payload?.project;const lookup=['/api/workflow/send','/api/workflow/delivery','/api/workflow/cancel'].includes(path)?'invite':path==='/api/workflow/review'?'application':path.endsWith('/report-review')?'report':path.includes('/notice-')?'notification':'';if(lookup)project=rows.find(r=>r.kind===lookup&&r.id===payload?.id)?.project;const current=state||(await getWorkflowState()).state;forbidden(project&&current.projects.some(p=>p.id===project&&p.owner===actor.owner),'项目负责人已变化或无权操作此项目');}
+async function authorizeCurrent(path,payload,rows,state){const actor=context.getStore();if(!actor)return;checkActor(actor,rows);if(actor.role==='admin')return;forbidden(actor.role==='owner');forbidden(!['/api/lifecycle/form','/api/lifecycle/intake-review'].includes(path),'全局入库设置由管理员管理');let project=payload?.project;const lookup=['/api/workflow/send','/api/workflow/delivery','/api/workflow/cancel'].includes(path)?'invite':path==='/api/workflow/review'?'application':path.endsWith('/report-review')?'report':path.includes('/notice-')?'notification':'';if(lookup)project=rows.find(r=>r.kind===lookup&&r.id===payload?.id)?.project;const current=state||(await getWorkflowState({rows})).state;forbidden(project&&current.projects.some(p=>p.id===project&&p.owner===actor.owner),'项目负责人已变化或无权操作此项目');}
 const validateView=state=>validate(state,{view:true}),hooks={};
 workflow=createWorkflow({lark,db,auth,validate:validateView,getState:getWorkflowState,saveState:saveWorkflowState,hooks});
 accountsManager=createAccounts({store:workflow.store});
@@ -77,12 +78,12 @@ const server=http.createServer(async(req,res)=>{
   if(await auth.handle(req,res,url.pathname))return;
   if(await lifecycle.publicHandle(req,res,url))return;
   if(await workflow.publicHandle(req,res,url))return;
-  if(req.method==='GET'&&url.pathname==='/login'){if(auth.session(req)&&await accountsManager.principal(auth.session(req))){redirect(res,'/');return;}res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",'Set-Cookie':auth.modeCookie()});res.end(loginHTML);return;}
-  if(req.method==='GET'&&url.pathname==='/login.js'){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(loginJS);return;}
+  if(req.method==='GET'&&url.pathname==='/login'){if(auth.session(req)&&await accountsManager.principal(auth.session(req))){redirect(res,'/');return;}sendPrepared(req,res,loginHTML,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",'Set-Cookie':auth.modeCookie()});return;}
+  if(req.method==='GET'&&url.pathname==='/login.js'){sendPrepared(req,res,loginJS,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return;}
   // Navigations use the form session. Existing API clients keep explicit Basic access.
   if(!auth.session(req)&&!(url.pathname.startsWith('/api/')&&auth.basic(req))){if(req.method==='GET'&&url.pathname==='/')redirect(res,'/login');else json(res,401,{error:'登录已过期，请重新登录'});return;}
   // Scripts contain no account data. A valid signed session can load them without scanning workflow rows for every asset; APIs still revalidate the principal.
-  if(req.method==='GET'&&assets.has(url.pathname)){res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(assets.get(url.pathname));return}
+  if(req.method==='GET'&&assets.has(url.pathname)){sendPrepared(req,res,assets.get(url.pathname),{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return}
   const session=auth.session(req),actor=session?await accountsManager.principal(session):{id:'bootstrap',username:'team',role:'admin',owner:''};
   if(!actor){res.setHeader('Set-Cookie','itea_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');json(res,401,{error:'账号已停用或权限已变化，请重新登录'});return;}
   await context.run(actor,async()=>{
@@ -94,7 +95,7 @@ const server=http.createServer(async(req,res)=>{
    forbidden(req.method==='GET','查阅账号不能修改数据');forbidden(!['/api/workflow/export','/api/setup'].includes(url.pathname),'查阅账号不能导出数据或查看配置');
    if(url.pathname==='/api/state'){const raw=await getWorkflowState({coalesce:true,browse:true,force:url.searchParams.get('fresh')==='1'||req.headers['x-data-refresh']==='1'});json(res,200,{...raw,state:redactState(raw.state)});return;}
    if(url.pathname==='/api/workflow'){const rows=await workflow.store.rows({coalesce:true});json(res,200,{ready:true,mail:await workflow.mail.status(rows),rows:readOnlyWorkflow(rows)});return;}
-   if(url.pathname.startsWith('/api/lifecycle')){const [rows,current]=await Promise.all([workflow.store.rows({coalesce:true}),getWorkflowState({coalesce:true})]);const project=url.searchParams.get('project');json(res,200,readOnlyLifecycle(rows,current.state,project,lifecycle.settings(rows,project),lifecycle.reminders(current.state,rows,project)));return;}
+   if(url.pathname.startsWith('/api/lifecycle')){const [rows,current]=await Promise.all([workflow.store.rows({coalesce:true}),getWorkflowState({coalesce:true,browse:true})]);const project=url.searchParams.get('project');json(res,200,readOnlyLifecycle(rows,current.state,project,lifecycle.settings(rows,project),lifecycle.reminders(current.state,rows,project)));return;}
    forbidden(!url.pathname.startsWith('/api/mail/'),'查阅账号不能使用邮箱');
   }
   if(actor.role==='owner'){
@@ -109,7 +110,7 @@ const server=http.createServer(async(req,res)=>{
   }
   if(await lifecycle.handle(req,res,url))return;
   if(await workflow.handle(req,res,url))return;
-  if(req.method==='GET'&&url.pathname==='/'){res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"});res.end(html);return}
+  if(req.method==='GET'&&url.pathname==='/'){sendPrepared(req,res,html,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'"});return}
   if(req.method==='GET'&&url.pathname==='/health'){json(res,200,{ok:true});return}
   if(req.method==='GET'&&url.pathname==='/api/connection'){json(res,200,lark?lark.status():{mode:'sqlite',configured:true});return}
   if(req.method==='GET'&&url.pathname==='/api/setup'){json(res,200,lark?await lark.inspect():{mode:'sqlite'});return}
