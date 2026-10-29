@@ -1,3 +1,4 @@
+import {basePath,mountRequest} from './app-mount.mjs';
 import {prepareAsset,sendPrepared} from './http-assets.mjs';
 import http from 'node:http';
 import {AsyncLocalStorage} from 'node:async_hooks';
@@ -15,11 +16,12 @@ import {createTeamAuth} from './auth.mjs';
 import {createWorkflow} from './workflow.mjs';
 import {createLifecycle} from './lifecycle.mjs';
 const root=dirname(fileURLToPath(import.meta.url));
+const appBase=basePath();
 const host=process.env.HOST||'127.0.0.1',port=Number(process.env.PORT||3000);
 const password=process.env.TEAM_PASSWORD||'';
 if(!['127.0.0.1','localhost','::1'].includes(host)&&password.length<16)throw Error('对外访问必须配置至少16位TEAM_PASSWORD，使用HTTPS反向代理。');
 let accountsManager;const context=new AsyncLocalStorage();
-const auth=createTeamAuth({password,lookupUser:(username,entered)=>accountsManager.login(username,entered),secureCookies:process.env.RENDER==='true'||process.env.RENDER_EXTERNAL_URL?.startsWith('https://')===true});
+const auth=createTeamAuth({password,lookupUser:(username,entered)=>accountsManager.login(username,entered),secureCookies:process.env.PUBLIC_BASE_URL?.startsWith('https://')===true||process.env.RENDER==='true'||process.env.RENDER_EXTERNAL_URL?.startsWith('https://')===true});
 const mode=process.env.DATA_BACKEND||'sqlite';
 if(!['sqlite','lark'].includes(mode))throw Error('DATA_BACKEND必须为sqlite或lark');
 const lark=mode==='lark'?configuredLark():null;
@@ -27,6 +29,7 @@ const dataDir=resolve(process.env.DATA_DIR||resolve(root,'data'));mkdirSync(data
 const db=new DatabaseSync(resolve(dataDir,'creator-hub.sqlite'));db.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000;');
 db.exec('CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, state TEXT NOT NULL); CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, changed_at TEXT NOT NULL);');
 const empty={people:[],accounts:[],projects:[],collabs:[],posts:[]};db.prepare('INSERT OR IGNORE INTO workspace (id,revision,state) VALUES (1,0,?)').run(JSON.stringify(empty));
+const appPathJS=prepareAsset(readFileSync(resolve(root,'public/app-path.js')));
 const html=prepareAsset(readFileSync(resolve(root,'public/index.html'))),loginHTML=prepareAsset(readFileSync(resolve(root,'public/login.html'))),loginJS=prepareAsset(readFileSync(resolve(root,'public/login.js')));
 function redirect(res,to){res.writeHead(303,{'Location':to,'Cache-Control':'no-store'});res.end();}
 const assets=new Map(['/cooperation-status.js','/state-changes.js','/mail-templates.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,prepareAsset(readFileSync(resolve(root,'public'+path)))]));
@@ -70,11 +73,13 @@ accountsManager=createAccounts({store:workflow.store});
 const management=createAdminManagement({store:workflow.store,accounts:accountsManager,readRaw,saveRaw,validate,checkActor});
 const lifecycle=createLifecycle({reviewer:()=>context.getStore()?.username||'team',store:workflow.store,mail:workflow.mail,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,key:process.env.LARK_APP_SECRET||password||'local-workflow-development',baseURL:process.env.PUBLIC_BASE_URL||process.env.RENDER_EXTERNAL_URL,authorizeMutation:authorizeCurrent});
 hooks.authorize=authorizeCurrent;hooks.confirmed=lifecycle.confirmed;hooks.issued=lifecycle.issued;
-const reminderTimer=setInterval(()=>void lifecycle.tick(),60000);reminderTimer.unref();
+const reminderTimer=process.env.DISABLE_AUTOMATIC_REMINDERS==='true'?null:setInterval(()=>void lifecycle.tick(),60000);reminderTimer?.unref();
 const server=http.createServer(async(req,res)=>{
  try{
+  if(mountRequest(req,res,appBase))return;
   const url=new URL(req.url,'http://'+req.headers.host);
   if(req.method==='GET'&&url.pathname==='/health'){json(res,200,{ok:true});return}
+  if(req.method==='GET'&&url.pathname==='/app-path.js'){sendPrepared(req,res,appPathJS,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store'});return;}
   if(await auth.handle(req,res,url.pathname))return;
   if(await lifecycle.publicHandle(req,res,url))return;
   if(await workflow.publicHandle(req,res,url))return;
