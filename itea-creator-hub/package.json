@@ -1,6 +1,6 @@
 {
   "name": "creator-collaboration-hub",
-  "version": "2.6.36",
+  "version": "2.6.37",
   "private": true,
   "type": "module",
   "engines": {
@@ -45,7 +45,8 @@
     "test:invite-feedback": "node invite-feedback-tests.mjs",
     "test:speed": "node speed-path-tests.mjs && node http-assets-tests.mjs",
     "test:subpath": "node subpath-tests.mjs",
-    "test:invite-schedule": "node invite-schedule-tests.mjs"
+    "test:invite-schedule": "node invite-schedule-tests.mjs",
+    "test:paid-posts": "node paid-post-ui-tests.mjs"
   },
   "devDependencies": {
     "jsdom": "26.1.0"
