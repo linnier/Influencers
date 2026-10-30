@@ -32,7 +32,7 @@ const empty={people:[],accounts:[],projects:[],collabs:[],posts:[]};db.prepare('
 const appPathJS=prepareAsset(readFileSync(resolve(root,'public/app-path.js')));
 const html=prepareAsset(readFileSync(resolve(root,'public/index.html'))),loginHTML=prepareAsset(readFileSync(resolve(root,'public/login.html'))),loginJS=prepareAsset(readFileSync(resolve(root,'public/login.js')));
 function redirect(res,to){res.writeHead(303,{'Location':to,'Cache-Control':'no-store'});res.end();}
-const assets=new Map(['/cooperation-status.js','/state-changes.js','/mail-templates.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,prepareAsset(readFileSync(resolve(root,'public'+path)))]));
+const assets=new Map(['/cooperation-status.js','/creator-tags.js','/state-changes.js','/mail-templates.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,prepareAsset(readFileSync(resolve(root,'public'+path)))]));
 const stages=['已报名','筛选中','沟通中','已确认合作','执行中','已完成','未选中','已取消'];
 function requireThat(ok,msg){if(!ok)throw Object.assign(Error(msg),{status:400})}
 function text(v,max=160){return typeof v==='string'&&v.length<=max}
