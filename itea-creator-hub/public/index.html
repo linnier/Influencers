@@ -132,12 +132,13 @@ function interaction(p){return FeeOverview.interactionValue(p)}
 function safeURL(value){try{const u=new URL(value);return ['https:','http:'].includes(u.protocol)?u.href:''}catch{return ''}}
 function matchesPerson(p,a){const q=$('query').value.trim().toLowerCase();return (!q||[p.name,p.tag,a.handle,p.itea,p.email,p.contact].some(v=>(v??'').toLowerCase().includes(q)))&&(!$('platform').value||a.platform===$('platform').value)}
 function filtered(){return collabs.filter(c=>matchesPerson(person(c.person),account(c.account))&&(!$('project').value||c.project===$('project').value)&&(!$('owner').value||c.owner===$('owner').value))}
-function postDateActive(){return !!($('postDateStart').value||$('postDateEnd').value)}
+function postDateSupported(){return tab==='近期项目总览'||tab==='Post 数据'||tab==='项目管理'&&ProjectWorkflow.dateFilterVisible()}
+function postDateActive(){return postDateSupported()&&!!($('postDateStart').value||$('postDateEnd').value)}
 function validPostDate(value){return typeof value==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(value)&&Number.isFinite(Date.parse(value))&&new Date(value).toISOString().slice(0,10)===value}
 function matchesPostDate(p){if(!postDateActive())return true;const start=$('postDateStart').value,end=$('postDateEnd').value;return !(start&&end&&start>end)&&validPostDate(p.date)&&(!start||p.date>=start)&&(!end||p.date<=end)}
 function cooperatedInDateRange(c){return cooperated(c)&&matchesPostDate({date:c.confirmed})}
 function postDateCaption(){return postDateActive()?($('postDateStart').value||'不限开始日期')+' 至 '+($('postDateEnd').value||'不限结束日期'):'全部发布日期'}
-function updatePostDateScope(ps){const start=$('postDateStart').value,end=$('postDateEnd').value,invalid=!!(start&&end&&start>end);$('postDateStart').max=end||'';$('postDateEnd').min=start||'';$('postDateControls').hidden=(!['近期项目总览','项目管理','Post 数据'].includes(tab)||tab==='项目管理'&&!ProjectWorkflow.dateFilterVisible());$('postDateScope').textContent=invalid?'开始日期不能晚于结束日期，请调整日期。':'当前：'+postDateCaption()+' · 合作人数按合作确认日期，Post及内容费用按发布日期筛选；报名人数、待跟进和项目预算保持全周期统计。';$('postDateScope').style.color=invalid?'#a13d32':'';}
+function updatePostDateScope(ps){const start=$('postDateStart').value,end=$('postDateEnd').value,invalid=!!(start&&end&&start>end);$('postDateStart').max=end||'';$('postDateEnd').min=start||'';$('postDateControls').hidden=!postDateSupported();$('postDateScope').textContent=invalid?'开始日期不能晚于结束日期，请调整日期。':'当前：'+postDateCaption()+' · 合作人数按合作确认日期，Post及内容费用按发布日期筛选；报名人数、待跟进和项目预算保持全周期统计。';$('postDateScope').style.color=invalid?'#a13d32':'';}
 function table(headers,rows){return rows.length?'<div class="tablewrap"><table><thead><tr>'+headers.map(x=>'<th>'+x+'</th>').join('')+'</tr></thead><tbody>'+rows.map(r=>'<tr>'+r.map(x=>'<td>'+x+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>':'<div class="empty">没有符合条件的记录</div>'}
 function options(list,valueKey,labelKey){return list.map(x=>'<option value="'+esc(x[valueKey])+'">'+esc(x[labelKey])+'</option>').join('')}
 function notify(s){$('msg').textContent=s}
