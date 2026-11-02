@@ -1,6 +1,6 @@
 {
   "name": "creator-collaboration-hub",
-  "version": "2.6.41",
+  "version": "2.6.42",
   "private": true,
   "type": "module",
   "engines": {
@@ -50,7 +50,8 @@
     "test:date-filter": "node date-filter-ui-tests.mjs",
     "test:startup": "node startup-ui-tests.mjs",
     "test:invite-recent": "node invite-recent-tests.mjs",
-    "test:creator-tags": "node creator-tags-ui-tests.mjs"
+    "test:creator-tags": "node creator-tags-ui-tests.mjs",
+    "test:custom-benefits": "node custom-benefits-tests.mjs"
   },
   "devDependencies": {
     "jsdom": "26.1.0"
