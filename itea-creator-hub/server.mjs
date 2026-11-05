@@ -1,3 +1,5 @@
+import './public/finance.js';
+import './public/project-report-core.js';
 import {basePath,mountRequest} from './app-mount.mjs';
 import {prepareAsset,sendPrepared} from './http-assets.mjs';
 import http from 'node:http';
@@ -30,9 +32,10 @@ const db=new DatabaseSync(resolve(dataDir,'creator-hub.sqlite'));db.exec('PRAGMA
 db.exec('CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, state TEXT NOT NULL); CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, changed_at TEXT NOT NULL);');
 const empty={people:[],accounts:[],projects:[],collabs:[],posts:[]};db.prepare('INSERT OR IGNORE INTO workspace (id,revision,state) VALUES (1,0,?)').run(JSON.stringify(empty));
 const appPathJS=prepareAsset(readFileSync(resolve(root,'public/app-path.js')));
+const reportHTML=prepareAsset(readFileSync(resolve(root,'public/project-report.html')));
 const html=prepareAsset(readFileSync(resolve(root,'public/index.html'))),loginHTML=prepareAsset(readFileSync(resolve(root,'public/login.html'))),loginJS=prepareAsset(readFileSync(resolve(root,'public/login.js')));
 function redirect(res,to){res.writeHead(303,{'Location':to,'Cache-Control':'no-store'});res.end();}
-const assets=new Map(['/cooperation-status.js','/creator-tags.js','/state-changes.js','/mail-templates.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,prepareAsset(readFileSync(resolve(root,'public'+path)))]));
+const assets=new Map(['/project-report-core.js','/project-report-ui.js','/cooperation-status.js','/creator-tags.js','/state-changes.js','/mail-templates.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,prepareAsset(readFileSync(resolve(root,'public'+path)))]));
 const stages=['已报名','筛选中','沟通中','已确认合作','执行中','已完成','未选中','已取消'];
 function requireThat(ok,msg){if(!ok)throw Object.assign(Error(msg),{status:400})}
 function text(v,max=160){return typeof v==='string'&&v.length<=max}
@@ -95,6 +98,17 @@ const server=http.createServer(async(req,res)=>{
   let payload;
   if(req.method==='POST'&&url.pathname.startsWith('/api/')){forbidden(new URL(req.headers.origin||'https://invalid').host===req.headers.host,'禁止跨站修改');let bytes=0;const chunks=[];for await(const chunk of req){bytes+=chunk.length;forbidden(bytes<=2*1024*1024,'请求过长');chunks.push(chunk);}const buffer=Buffer.concat(chunks);try{payload=JSON.parse(buffer.toString())}catch{throw Object.assign(Error('请求格式错误'),{status:400})}req[Symbol.asyncIterator]=()=>Readable.from([buffer])[Symbol.asyncIterator]();}
   if(url.pathname==='/api/me'){json(res,200,{username:actor.username,role:actor.role,owner:actor.owner,contactVisible:actor.role!=='viewer',canExport:actor.role!=='viewer'});return;}
+  if(['/project-report','/api/reports/project'].includes(url.pathname)){
+   forbidden(actor.role!=='viewer','查阅账号不能导出报告');
+   if(req.method!=='GET'){json(res,405,{error:'报告仅支持读取'});return;}
+   if(url.pathname==='/project-report'){sendPrepared(req,res,reportHTML,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"});return;}
+   const input=Object.fromEntries(['project','platform','owner','q','start','end'].map(k=>[k,url.searchParams.get(k)||'']));
+   requireThat(input.project&&input.project.length<=80&&input.owner.length<=60&&input.q.length<=200&&input.start.length<=10&&input.end.length<=10&&['','Instagram','TikTok','小红书'].includes(input.platform),'报告筛选条件无效');
+   const rows=await workflow.store.rows({coalesce:true});checkActor(actor,rows);
+   const current=await getWorkflowState({rows,coalesce:true,browse:true});
+   if(url.searchParams.has('revision')&&String(current.revision)!==url.searchParams.get('revision')){json(res,409,{error:'项目资料已更新，请返回项目总览刷新资料后重新生成报告'});return;}
+   json(res,200,globalThis.ProjectReportCore.build(current.state,rows,input,{revision:current.revision,readAt:current.readAt}));return;
+  }
   if(await management.handle(req,res,url,actor,payload))return;
   if(actor.role==='viewer'){
    forbidden(req.method==='GET','查阅账号不能修改数据');forbidden(!['/api/workflow/export','/api/setup'].includes(url.pathname),'查阅账号不能导出数据或查看配置');
