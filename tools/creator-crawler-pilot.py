@@ -5,6 +5,7 @@ import csv
 import datetime as dt
 import html
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -16,7 +17,6 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import urllib.robotparser
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 
@@ -33,6 +33,7 @@ TARGETS = [
 ]
 LIMIT_SECONDS, LIMIT_REQUESTS, LIMIT_BYTES = 90, 14, 8 * 1024 * 1024
 PAGE_BYTES = 2 * 1024 * 1024
+ROBOTS_BYTES = 512 * 1024
 
 
 class PilotStop(Exception):
@@ -78,6 +79,7 @@ class Client:
         self.requests = 0
         self.download_bytes = 0
         self.last_request = 0
+        self.gap_by_host = {}
         self.opener = urllib.request.build_opener(NoRedirect())
 
     def get(self, url, max_bytes=PAGE_BYTES):
@@ -86,7 +88,8 @@ class Client:
             remaining = self.deadline - time.monotonic()
             if remaining <= 0 or self.requests >= LIMIT_REQUESTS or self.download_bytes >= LIMIT_BYTES:
                 raise PilotStop('达到本次时间、请求数或下载量上限，已停止')
-            pause = max(0, 0.8 - (time.monotonic() - self.last_request))
+            gap = max(0.8, self.gap_by_host.get(urllib.parse.urlsplit(url).hostname, 0))
+            pause = max(0, gap - (time.monotonic() - self.last_request))
             if pause:
                 time.sleep(min(pause, remaining))
             timeout = min(8, max(0.1, self.deadline - time.monotonic()))
@@ -120,38 +123,101 @@ class Client:
                 except LookupError:
                     text = body.decode('utf-8', errors='replace')
                 return {'status': code, 'url': url, 'text': text,
-                        'content_type': response.headers.get('Content-Type', '')}
+                        'content_type': response.headers.get('Content-Type', ''), 'bytes': len(body)}
         raise ValueError('未完成页面读取')
+
+
+def robots_policy(source, url):
+    """Merge applicable groups; longest path rule wins, Allow wins ties."""
+    groups, agents, rules, delay, directives = [], [], [], 0.0, False
+    for line in source.splitlines():
+        line = line.split('#', 1)[0].strip()
+        if ':' not in line:
+            continue
+        field, value = [part.strip() for part in line.split(':', 1)]
+        field = field.lower()
+        if field == 'user-agent':
+            if directives:
+                groups.append((agents, rules, delay))
+                agents, rules, delay, directives = [], [], 0.0, False
+            if value:
+                agents.append(value.split()[0].split('/')[0].lower())
+        elif agents and field in ('allow', 'disallow', 'crawl-delay'):
+            directives = True
+            if field == 'crawl-delay':
+                try:
+                    number = float(value)
+                    if math.isfinite(number) and number >= 0:
+                        delay = max(delay, number)
+                except ValueError:
+                    pass
+            elif value:
+                rules.append((value, field == 'allow'))
+    if agents:
+        groups.append((agents, rules, delay))
+    product = AGENT.split('/')[0].lower()
+    selected = [group for group in groups if product in group[0]]
+    if not selected:
+        selected = [group for group in groups if '*' in group[0]]
+    def normalized(value):
+        def escape(match):
+            character = chr(int(match.group()[1:], 16))
+            return character if character.isascii() and (character.isalnum() or character in '-._~') else match.group().upper()
+        value = re.sub(r'%[0-9A-Fa-f]{2}', escape, value)
+        return urllib.parse.quote(value, safe="/%?:@!$&'()*+,;=-._~")
+    parsed = urllib.parse.urlsplit(url)
+    path = normalized((parsed.path or '/') + ('?' + parsed.query if parsed.query else ''))
+    matches = []
+    for _, group_rules, _ in selected:
+        for rule, allowed in group_rules:
+            rule = normalized(rule)
+            terminal = rule.endswith('$')
+            pattern = rule[:-1] if terminal else rule
+            expression = '^' + re.escape(pattern).replace(r'\*', '.*') + ('$' if terminal else '')
+            if re.search(expression, path):
+                matches.append((len(pattern.replace('*', '').encode('utf-8')), allowed, rule))
+    winner = max(matches, key=lambda match: (match[0], match[1])) if matches else None
+    return {'allowed': winner[1] if winner else True, 'rule': winner[2] if winner else '',
+            'crawl_delay': max((group[2] for group in selected), default=0.0)}
 
 
 class Robots:
     def __init__(self, client):
-        self.client, self.cache = client, {}
+        self.client, self.cache, self.checks = client, {}, []
 
     def allowed(self, url):
         u = urllib.parse.urlsplit(safe_url(url))
         root = u.scheme + '://' + u.netloc
         if root not in self.cache:
             try:
-                response = self.client.get(root + '/robots.txt', 64 * 1024)
+                response = self.client.get(root + '/robots.txt', ROBOTS_BYTES)
+                self.checks.append({'url': root + '/robots.txt', 'http_status': response['status'],
+                    'body_bytes': response.get('bytes', len(response['text'].encode('utf-8'))),
+                    'content_type': response['content_type'], 'read_limit_bytes': ROBOTS_BYTES})
                 code = response['status']
                 if code in (404, 410):
                     self.cache[root] = (None, '')
                 elif code == 200 and 'text/html' not in response['content_type'].lower() and '<html' not in response['text'][:1000].lower():
-                    parser = urllib.robotparser.RobotFileParser()
-                    parser.parse(response['text'].splitlines())
-                    self.cache[root] = (parser, '')
+                    self.cache[root] = (response['text'], '')
                 else:
                     self.cache[root] = (None, 'robots.txt 未能确认（HTTP %s），本次跳过' % code)
             except PilotStop:
                 raise
             except Exception as e:
+                self.checks.append({'url': root + '/robots.txt', 'http_status': None, 'read_limit_bytes': ROBOTS_BYTES, 'reason': error_text(e)})
                 self.cache[root] = (None, 'robots.txt 未能确认，本次跳过：' + error_text(e))
-        parser, reason = self.cache[root]
+        source, reason = self.cache[root]
         if reason:
             return False, reason
-        if parser and not parser.can_fetch(AGENT, url):
-            return False, '网站 robots.txt 不允许本采集程序读取该路径，本次跳过'
+        decision = robots_policy(source, url) if source is not None else {'allowed': True, 'rule': '', 'crawl_delay': 0.0}
+        self.checks.append({'target': url, 'allowed': decision['allowed'], 'matched_rule': decision['rule'], 'crawl_delay': decision['crawl_delay']})
+        if not decision['allowed']:
+            return False, '网站 robots.txt 不允许本采集程序读取该路径，本次跳过；匹配规则：' + decision['rule'][:160]
+        if decision['crawl_delay'] > max(0, getattr(self.client, 'deadline', time.monotonic() + LIMIT_SECONDS) - time.monotonic()):
+            return False, '网站要求的采集间隔超过本次剩余时间，本次跳过'
+        if not hasattr(self.client, 'gap_by_host'):
+            self.client.gap_by_host = {}
+        self.client.gap_by_host[u.hostname] = decision['crawl_delay']
         return True, ''
 
 
@@ -330,7 +396,7 @@ def checked_page(client, robots, label, url):
     return row
 
 
-def run_pilot(client=None, keyword='food', region='Singapore', output_root=None, targets=None):
+def run_pilot(client=None, keyword='food', region='Singapore', output_root=None, targets=None, discover=True):
     client = client or Client()
     robots = Robots(client)
     started, usage = time.monotonic(), resource.getrusage(resource.RUSAGE_SELF)
@@ -340,25 +406,28 @@ def run_pilot(client=None, keyword='food', region='Singapore', output_root=None,
               'host_before': memory_snapshot(), 'planned_target_count': len(targets), 'discovery': {}, 'pages': [],
               'application_changes': False, 'database_writes': False, 'paid_api_calls': False, 'search_api_keys_used': False}
     try:
-        query = '(site:instagram.com OR site:tiktok.com) "%s" "%s"' % (keyword.replace('"', ' ')[:100], region.replace('"', ' ')[:60])
-        feed_url = 'https://www.bing.com/search?' + urllib.parse.urlencode({'q': query, 'format': 'rss'})
-        allowed, reason = robots.allowed(feed_url)
-        if not allowed:
-            report['discovery'] = {'status': '跳过', 'reason': reason, 'candidate_count': None}
+        if not discover:
+            report['discovery'] = {'status': '未执行', 'reason': '本次仅复测TikTok，未运行关键词发现', 'candidate_count': None}
         else:
-            try:
-                response = client.get(feed_url, 512 * 1024)
-                if response['status'] != 200:
-                    raise ValueError('搜索源返回 HTTP %s，不能确认为0条结果' % response['status'])
-                candidates = parse_feed(response['text'])
-                report['discovery'] = {'status': '已读取', 'source': 'Bing公开RSS（非保证可用的接口）',
-                                       'query': query, 'candidate_count': len(candidates), 'candidates': candidates}
-                existing = {profile_url(url)[2] for _, url in targets if profile_url(url)}
-                targets.extend(('关键词候选 @' + c['handle'], c['url']) for c in candidates[:2] if c['url'] not in existing)
-            except PilotStop:
-                raise
-            except Exception as e:
-                report['discovery'] = {'status': '未获取', 'reason': error_text(e), 'candidate_count': None}
+            query = '(site:instagram.com OR site:tiktok.com) "%s" "%s"' % (keyword.replace('"', ' ')[:100], region.replace('"', ' ')[:60])
+            feed_url = 'https://www.bing.com/search?' + urllib.parse.urlencode({'q': query, 'format': 'rss'})
+            allowed, reason = robots.allowed(feed_url)
+            if not allowed:
+                report['discovery'] = {'status': '跳过', 'reason': reason, 'candidate_count': None}
+            else:
+                try:
+                    response = client.get(feed_url, 512 * 1024)
+                    if response['status'] != 200:
+                        raise ValueError('搜索源返回 HTTP %s，不能确认为0条结果' % response['status'])
+                    candidates = parse_feed(response['text'])
+                    report['discovery'] = {'status': '已读取', 'source': 'Bing公开RSS（非保证可用的接口）',
+                                           'query': query, 'candidate_count': len(candidates), 'candidates': candidates}
+                    existing = {profile_url(url)[2] for _, url in targets if profile_url(url)}
+                    targets.extend(('关键词候选 @' + c['handle'], c['url']) for c in candidates[:2] if c['url'] not in existing)
+                except PilotStop:
+                    raise
+                except Exception as e:
+                    report['discovery'] = {'status': '未获取', 'reason': error_text(e), 'candidate_count': None}
         report['planned_target_count'] = len(targets)
         for label, url in targets:
             try:
@@ -378,6 +447,7 @@ def run_pilot(client=None, keyword='food', region='Singapore', output_root=None,
         wall = time.monotonic() - started
         cpu = (current.ru_utime + current.ru_stime) - (usage.ru_utime + usage.ru_stime)
         peak_mib = current.ru_maxrss / (1024 * 1024 if sys.platform == 'darwin' else 1024)
+        report['robots_checks'] = robots.checks
         report['resources'] = {'elapsed_seconds': round(wall, 3), 'process_cpu_seconds': round(cpu, 3),
             'average_one_core_cpu_percent': round(cpu / wall * 100, 2) if wall else 0,
             'process_peak_rss_mib': round(peak_mib, 2), 'http_attempts': client.requests,
@@ -401,6 +471,14 @@ def run_pilot(client=None, keyword='food', region='Singapore', output_root=None,
             len({email.lower() for r in report['pages'] for email in r['emails']})))
         print('耗时 %.2f 秒 | 进程峰值内存 %.2f MiB | CPU时间 %.3f 秒 | HTTP尝试 %s 次 | 正文下载 %.2f KiB' % (
             wall, peak_mib, cpu, client.requests, client.download_bytes / 1024))
+        for check in robots.checks:
+            if 'target' in check:
+                print('规则判断：%s | %s | 匹配规则 %s | 间隔 %s秒' % (check['target'], '允许' if check['allowed'] else '不允许', check['matched_rule'] or '无禁止规则', check['crawl_delay']))
+                continue
+            print('robots检查：%s | HTTP %s | 正文 %s KiB | 上限 %s KiB%s' % (check['url'],
+                check.get('http_status') if check.get('http_status') is not None else '未确认',
+                round(check['body_bytes'] / 1024, 2) if 'body_bytes' in check else '未完成',
+                check['read_limit_bytes'] // 1024, (' | ' + check['reason']) if check.get('reason') else ''))
         print('报告目录：' + str(output))
     return report, output
 
@@ -409,6 +487,7 @@ def main():
     parser = argparse.ArgumentParser(description='itea公开网页轻量试采：限时90秒、串行、只写/tmp报告、不访问应用数据库')
     parser.add_argument('--keyword', default='food')
     parser.add_argument('--region', default='Singapore')
+    parser.add_argument('--only-tiktok', action='store_true', help='仅复测1个TikTok主页，跳过搜索与其他网站')
     args = parser.parse_args()
     def deadline(signum, frame):
         raise PilotStop('达到本次时间或CPU用量上限，测试已停止')
@@ -420,10 +499,10 @@ def main():
         pass
     previous = signal.signal(signal.SIGALRM, deadline)
     signal.alarm(LIMIT_SECONDS)
-    print('itea自建爬虫小规模测试：5个固定样本，关键词候选最多再读取2个。', flush=True)
+    print('itea TikTok单项复测：1个公开主页，robots读取上限512KiB。' if args.only_tiktok else 'itea自建爬虫小规模测试：5个固定样本，关键词候选最多再读取2个。', flush=True)
     print('单任务运行；最多14次HTTP尝试、约8MiB响应正文；不安装依赖、不登录、不修改网站。', flush=True)
     try:
-        run_pilot(keyword=args.keyword, region=args.region)
+        run_pilot(keyword=args.keyword, region=args.region, targets=[TARGETS[-1]] if args.only_tiktok else None, discover=not args.only_tiktok)
     finally:
         signal.alarm(0)
         signal.signal(signal.SIGALRM, previous)

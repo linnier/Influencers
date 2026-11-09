@@ -108,6 +108,71 @@ class PilotTests(unittest.TestCase):
         client = FakeClient({'https://sophieong.com/robots.txt': RuntimeError('network denied')})
         self.assertIn('未能确认', pilot.Robots(client).allowed('https://sophieong.com/')[1])
 
+    def test_large_robots_within_new_limit(self):
+        url = 'https://www.tiktok.com/@danielfooddiary'
+        payload = ('# padding ' + 'a' * 100 + '\n') * 900 + 'User-agent: *\nDisallow: /api/\n'
+        self.assertGreater(len(payload), 64 * 1024)
+        client = pilot.Client()
+        robots_response = RawResponse(payload.encode())
+        robots_response.headers.replace_header('Content-Type', 'text/plain; charset=utf-8')
+        data = {'userInfo': {'user': {'uniqueId': 'danielfooddiary', 'nickname': 'Creator', 'signature': 'Business public@creator.test'}, 'stats': {'followerCount': 1234}}}
+        page = '<script>' + json.dumps(data) + '</script>'
+        client.opener = FakeOpener([robots_response, RawResponse(page.encode())])
+        client.last_request = 0
+        robots = pilot.Robots(client)
+        allowed, reason = robots.allowed(url)
+        self.assertTrue(allowed, reason)
+        self.assertEqual(robots.checks[0]['body_bytes'], len(payload.encode()))
+        self.assertEqual(robots.checks[0]['read_limit_bytes'], 512 * 1024)
+        # Unit tests do not wait between simulated network requests.
+        client.last_request = 0
+        row = pilot.checked_page(client, robots, 'sample', url)
+        self.assertEqual(row['status'], '已读取')
+        self.assertEqual(row['followers'], 1234)
+        self.assertEqual(client.requests, 2)
+
+    def test_large_robots_disallow_and_oversize_still_stop(self):
+        url = 'https://www.tiktok.com/@danielfooddiary'
+        payload = ('#' + 'x' * 100 + '\n') * 900 + 'User-agent: *\nDisallow: /@*\n'
+        client = FakeClient({'https://www.tiktok.com/robots.txt': response(payload, content_type='text/plain')})
+        robots = pilot.Robots(client)
+        row = pilot.checked_page(client, robots, 'sample', url)
+        self.assertEqual(row['status'], '跳过')
+        self.assertIn('/@*', row['reason'])
+        self.assertEqual(client.requests, 1)
+        client = pilot.Client()
+        raw = RawResponse(b'#' * (pilot.ROBOTS_BYTES + 1))
+        raw.headers.replace_header('Content-Type', 'text/plain')
+        client.opener = FakeOpener([raw])
+        row = pilot.checked_page(client, pilot.Robots(client), 'sample', url)
+        self.assertEqual(row['status'], '跳过')
+        self.assertIn('读取上限', row['reason'])
+        self.assertEqual(client.requests, 1)
+
+    def test_rule_precedence_groups_wildcards_and_delay(self):
+        root = 'https://www.tiktok.com'
+        source = 'User-agent: *\nDisallow: /@*\nAllow: /@danielfooddiary$\nCrawl-delay: 1\n'
+        self.assertTrue(pilot.robots_policy(source, root + '/@danielfooddiary')['allowed'])
+        self.assertFalse(pilot.robots_policy(source, root + '/@other')['allowed'])
+        self.assertFalse(pilot.robots_policy(source, root + '/@danielfooddiary?x=1')['allowed'])
+        self.assertEqual(pilot.robots_policy(source, root + '/@other')['crawl_delay'], 1)
+        source = 'User-agent: *\nDisallow: /\nUser-agent: iteaDiscoveryPilot\nAllow: /@\nUser-agent: ITEADISCOVERYPILOT\nDisallow: /@private\n'
+        self.assertTrue(pilot.robots_policy(source, root + '/@public')['allowed'])
+        self.assertFalse(pilot.robots_policy(source, root + '/@private')['allowed'])
+        self.assertTrue(pilot.robots_policy('User-agent: *\nDisallow: /same\nAllow: /same\n', root + '/same')['allowed'])
+
+    def test_tiktok_only_mode_does_not_visit_search_or_other_sites(self):
+        url = 'https://www.tiktok.com/@danielfooddiary'
+        data = {'userInfo': {'user': {'uniqueId': 'danielfooddiary', 'nickname': 'Creator', 'signature': 'hello@creator.test'}, 'stats': {'followerCount': 0}}}
+        client = FakeClient({'https://www.tiktok.com/robots.txt': response('User-agent: *\nDisallow: /api/', content_type='text/plain'), url: response('<script>' + json.dumps(data) + '</script>')})
+        with tempfile.TemporaryDirectory() as temp:
+            with contextlib.redirect_stdout(io.StringIO()):
+                report, output = pilot.run_pilot(client, targets=[('TikTok sample', url)], discover=False, output_root=temp)
+            self.assertEqual(report['discovery']['status'], '未执行')
+            self.assertEqual(report['pages'][0]['followers'], 0)
+            self.assertEqual(client.seen, ['https://www.tiktok.com/robots.txt', url])
+            self.assertEqual(report['robots_checks'][1]['allowed'], True)
+
     def test_rss_is_not_fake_empty_and_profiles_only(self):
         source = '<rss><channel><item><link>https://instagram.com/alice/</link><title>Alice</title></item><item><link>https://instagram.com/p/abc/</link></item><item><link>https://instagram.com/alice/?igsh=x</link></item></channel></rss>'
         self.assertEqual(len(pilot.parse_feed(source)), 1)
