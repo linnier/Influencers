@@ -127,6 +127,31 @@ class Client:
         raise ValueError('未完成页面读取')
 
 
+def robots_document(source, content_type):
+    """Recognize actual robots text; a MIME label alone is not a path decision."""
+    body = source.lstrip('\ufeff')
+    lines = [line.split('#', 1)[0].strip() for line in body.splitlines()]
+    lines = [line for line in lines if line]
+    meaningful = '\n'.join(lines)
+    if re.search(r'<(?:!doctype|html|head|body|title|script|meta|iframe|div|form)\b', meaningful, re.I):
+        match = re.search(r'<title\b[^>]*>(.{0,500}?)</title>', body, re.I | re.S)
+        title = html.unescape(re.sub(r'<[^>]+>', '', match.group(1))).strip()[:120] if match else ''
+        return {'kind': 'html', 'reason': '返回的是HTML网页，不是robots规则文本' + ('；页面标题：' + title if title else ''), 'title': title}
+    if not lines:
+        if 'text/plain' in content_type.lower():
+            return {'kind': 'empty_rules', 'reason': '空的纯文本规则文件'}
+        return {'kind': 'unknown', 'reason': '正文为空，且未标为纯文本规则文件'}
+    records = []
+    for line in lines:
+        match = re.fullmatch(r'([A-Za-z][A-Za-z0-9_-]*)\s*:\s*(.*)', line)
+        if not match:
+            return {'kind': 'unknown', 'reason': '正文包含无法识别的规则行，未按允许采集处理'}
+        records.append((match.group(1).lower(), match.group(2)))
+    if not any(field == 'user-agent' and value for field, value in records):
+        return {'kind': 'unknown', 'reason': '正文未包含有效的User-agent规则，无法确认'}
+    return {'kind': 'rules', 'reason': '正文为可识别的robots规则文本', 'mime_mislabeled': 'text/html' in content_type.lower()}
+
+
 def robots_policy(source, url):
     """Merge applicable groups; longest path rule wins, Allow wins ties."""
     groups, agents, rules, delay, directives = [], [], [], 0.0, False
@@ -197,8 +222,14 @@ class Robots:
                 code = response['status']
                 if code in (404, 410):
                     self.cache[root] = (None, '')
-                elif code == 200 and 'text/html' not in response['content_type'].lower() and '<html' not in response['text'][:1000].lower():
-                    self.cache[root] = (response['text'], '')
+                elif code == 200:
+                    document = robots_document(response['text'], response['content_type'])
+                    self.checks[-1]['document'] = document
+                    self.checks[-1]['final_url'] = response['url']
+                    if document['kind'] in ('rules', 'empty_rules'):
+                        self.cache[root] = (response['text'].lstrip('\ufeff'), '')
+                    else:
+                        self.cache[root] = (None, 'robots.txt 未能确认，本次跳过：' + document['reason'])
                 else:
                     self.cache[root] = (None, 'robots.txt 未能确认（HTTP %s），本次跳过' % code)
             except PilotStop:
@@ -479,6 +510,10 @@ def run_pilot(client=None, keyword='food', region='Singapore', output_root=None,
                 check.get('http_status') if check.get('http_status') is not None else '未确认',
                 round(check['body_bytes'] / 1024, 2) if 'body_bytes' in check else '未完成',
                 check['read_limit_bytes'] // 1024, (' | ' + check['reason']) if check.get('reason') else ''))
+            if check.get('document'):
+                print('  正文判断：' + check['document']['reason'])
+            if check.get('final_url') and check['final_url'] != check['url']:
+                print('  最终网址：' + check['final_url'])
         print('报告目录：' + str(output))
     return report, output
 

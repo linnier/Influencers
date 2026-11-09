@@ -173,6 +173,33 @@ class PilotTests(unittest.TestCase):
             self.assertEqual(client.seen, ['https://www.tiktok.com/robots.txt', url])
             self.assertEqual(report['robots_checks'][1]['allowed'], True)
 
+    def test_valid_rules_with_html_mime_still_apply_policy(self):
+        url = 'https://www.tiktok.com/@danielfooddiary'
+        source = '\ufeffUser-agent: *\nDisallow: /api/\n'
+        client = FakeClient({'https://www.tiktok.com/robots.txt': response(source, content_type='text/html')})
+        robots = pilot.Robots(client)
+        self.assertTrue(robots.allowed(url)[0])
+        self.assertEqual(robots.checks[0]['document']['kind'], 'rules')
+        self.assertTrue(robots.checks[0]['document']['mime_mislabeled'])
+        client = FakeClient({'https://www.tiktok.com/robots.txt': response('User-agent: *\nDisallow: /@*', content_type='text/html')})
+        self.assertFalse(pilot.Robots(client).allowed(url)[0])
+
+    def test_html_and_ambiguous_documents_do_not_authorize_profile(self):
+        url = 'https://www.tiktok.com/@danielfooddiary'
+        for content, mime in [('<html><title>Verify access</title><body>Challenge</body></html>', 'text/html'),
+                              ('<html><body>User-agent: *\nAllow: /</body></html>', 'text/plain'),
+                              ('{"message":"unavailable"}', 'application/json'),
+                              ('', 'text/html')]:
+            client = FakeClient({'https://www.tiktok.com/robots.txt': response(content, content_type=mime)})
+            robots = pilot.Robots(client)
+            allowed, reason = robots.allowed(url)
+            self.assertFalse(allowed, (content, mime))
+            self.assertEqual(client.requests, 1)
+            self.assertNotIn('target', robots.checks[-1])
+        document = pilot.robots_document('<html><title>Verify &amp; Access</title></html>', 'text/html')
+        self.assertEqual(document['title'], 'Verify & Access')
+        self.assertEqual(pilot.robots_document('# comment only', 'text/plain')['kind'], 'empty_rules')
+
     def test_rss_is_not_fake_empty_and_profiles_only(self):
         source = '<rss><channel><item><link>https://instagram.com/alice/</link><title>Alice</title></item><item><link>https://instagram.com/p/abc/</link></item><item><link>https://instagram.com/alice/?igsh=x</link></item></channel></rss>'
         self.assertEqual(len(pilot.parse_feed(source)), 1)
