@@ -1,3 +1,4 @@
+import {createSearchProvider} from './discovery-search.mjs';
 import {createDiscovery} from './discovery-core.mjs';
 import './public/finance.js';
 import './public/project-report-core.js';
@@ -77,7 +78,8 @@ accountsManager=createAccounts({store:workflow.store});
 const management=createAdminManagement({store:workflow.store,accounts:accountsManager,readRaw,saveRaw,validate,checkActor});
 const lifecycle=createLifecycle({reviewer:()=>context.getStore()?.username||'team',store:workflow.store,mail:workflow.mail,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,key:process.env.LARK_APP_SECRET||password||'local-workflow-development',baseURL:process.env.PUBLIC_BASE_URL||process.env.RENDER_EXTERNAL_URL,authorizeMutation:authorizeCurrent});
 hooks.authorize=authorizeCurrent;hooks.confirmed=lifecycle.confirmed;hooks.issued=lifecycle.issued;
-const discovery=createDiscovery({store:workflow.store,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,checkActor});
+const searchService=createSearchProvider({store:workflow.store,checkActor,secret:process.env.LARK_APP_SECRET||password,envKey:process.env.BRAVE_SEARCH_API_KEY||''});
+const discovery=createDiscovery({store:workflow.store,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,checkActor,searchService});
 const reminderTimer=process.env.DISABLE_AUTOMATIC_REMINDERS==='true'?null:setInterval(()=>void lifecycle.tick(),60000);reminderTimer?.unref();
 const server=http.createServer(async(req,res)=>{
  try{
