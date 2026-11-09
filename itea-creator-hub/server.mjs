@@ -1,3 +1,4 @@
+import {createDiscovery} from './discovery-core.mjs';
 import './public/finance.js';
 import './public/project-report-core.js';
 import {basePath,mountRequest} from './app-mount.mjs';
@@ -35,7 +36,7 @@ const appPathJS=prepareAsset(readFileSync(resolve(root,'public/app-path.js')));
 const reportHTML=prepareAsset(readFileSync(resolve(root,'public/project-report.html')));
 const html=prepareAsset(readFileSync(resolve(root,'public/index.html'))),loginHTML=prepareAsset(readFileSync(resolve(root,'public/login.html'))),loginJS=prepareAsset(readFileSync(resolve(root,'public/login.js')));
 function redirect(res,to){res.writeHead(303,{'Location':to,'Cache-Control':'no-store'});res.end();}
-const assets=new Map(['/project-report-core.js','/project-report-excel.js','/project-report-ui.js','/cooperation-status.js','/creator-tags.js','/state-changes.js','/mail-templates.js','/mail-design.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,prepareAsset(readFileSync(resolve(root,'public'+path)))]));
+const assets=new Map(['/creator-discovery.js','/project-report-core.js','/project-report-excel.js','/project-report-ui.js','/cooperation-status.js','/creator-tags.js','/state-changes.js','/mail-templates.js','/mail-design.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,prepareAsset(readFileSync(resolve(root,'public'+path)))]));
 const stages=['已报名','筛选中','沟通中','已确认合作','执行中','已完成','未选中','已取消'];
 function requireThat(ok,msg){if(!ok)throw Object.assign(Error(msg),{status:400})}
 function text(v,max=160){return typeof v==='string'&&v.length<=max}
@@ -76,6 +77,7 @@ accountsManager=createAccounts({store:workflow.store});
 const management=createAdminManagement({store:workflow.store,accounts:accountsManager,readRaw,saveRaw,validate,checkActor});
 const lifecycle=createLifecycle({reviewer:()=>context.getStore()?.username||'team',store:workflow.store,mail:workflow.mail,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,key:process.env.LARK_APP_SECRET||password||'local-workflow-development',baseURL:process.env.PUBLIC_BASE_URL||process.env.RENDER_EXTERNAL_URL,authorizeMutation:authorizeCurrent});
 hooks.authorize=authorizeCurrent;hooks.confirmed=lifecycle.confirmed;hooks.issued=lifecycle.issued;
+const discovery=createDiscovery({store:workflow.store,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,checkActor});
 const reminderTimer=process.env.DISABLE_AUTOMATIC_REMINDERS==='true'?null:setInterval(()=>void lifecycle.tick(),60000);reminderTimer?.unref();
 const server=http.createServer(async(req,res)=>{
  try{
@@ -110,6 +112,7 @@ const server=http.createServer(async(req,res)=>{
    json(res,200,globalThis.ProjectReportCore.build(current.state,rows,input,{revision:current.revision,readAt:current.readAt}));return;
   }
   if(await management.handle(req,res,url,actor,payload))return;
+  if(await discovery.handle(req,res,url,actor,payload,json))return;
   if(actor.role==='viewer'){
    forbidden(req.method==='GET','查阅账号不能修改数据');forbidden(!['/api/workflow/export','/api/setup'].includes(url.pathname),'查阅账号不能导出数据或查看配置');
    if(url.pathname==='/api/state'){const raw=await getWorkflowState({coalesce:true,browse:true,force:url.searchParams.get('fresh')==='1'||req.headers['x-data-refresh']==='1'});json(res,200,{...raw,state:redactState(raw.state)});return;}

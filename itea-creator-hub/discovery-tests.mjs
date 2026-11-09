@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import {profile,parsePublic,extractEmails,cleanCandidate,importPlan,createDiscovery} from './discovery-core.mjs';
+import {publicAddress,publicURL} from './discovery-fetch.mjs';
+import {WorkflowStore} from './workflow-store.mjs';
+import {DatabaseSync} from 'node:sqlite';
+const admin={id:'bootstrap',role:'admin',username:'team'},owner={id:'owner-1',role:'owner',owner:'Amy'},viewer={id:'viewer',role:'viewer'};
+for(const ip of ['127.0.0.1','10.1.1.1','100.64.1.2','169.254.169.254','172.31.2.3','192.168.1.2','198.18.0.1','224.0.0.1','::1','::ffff:127.0.0.1','fc00::1','fe80::1','2001:db8::1','2002:7f00:1::'])assert.equal(publicAddress(ip),false,ip);
+for(const ip of ['8.8.8.8','1.1.1.1','2606:4700:4700::1111','2001:4860:4860::8888'])assert.equal(publicAddress(ip),true,ip);
+for(const url of ['http://example.com/','https://127.0.0.1/','https://[::1]/','https://user:secret@example.com/','https://example.com:444/','https://localhost/'])assert.throws(()=>publicURL(url));
+for(const url of ['https://www.instagram.com/p/abc/','https://www.instagram.com/accounts/','https://www.tiktok.com/@alice/video/123','https://www.instagram.com.evil.test/alice/','https://vm.tiktok.com/abc','https://tiktok.com/@'])assert.throws(()=>profile(url));
+assert.equal(profile('https://instagram.com/Alice/?igsh=share').url,'https://www.instagram.com/alice/');
+assert.deepEqual(extractEmails('business: hello @ creator.test and hello@creator.test'),['hello@creator.test']);
+const a=profile('https://www.tiktok.com/@alice');
+const page='<script type="application/json">'+JSON.stringify({__DEFAULT_SCOPE__:{'webapp.user-detail':{userInfo:{user:{uniqueId:'alice',nickname:'Alice',signature:'Business: hello@creator.test',bioLink:{link:'https://creator.test/'}},stats:{followerCount:12345}}}}})+'</script>';
+assert.equal(parsePublic(page,a).fans,12345);assert.equal(parsePublic(page,a).emails[0],'hello@creator.test');
+assert.throws(()=>parsePublic('<title>Log in | TikTok</title>',a));assert.throws(()=>parsePublic(page,profile('https://www.tiktok.com/@bob')));
+const meta='<meta property="og:title" content="Alice (@alice) • Instagram"><meta name="description" content="12.3K followers · Business: hello@creator.test">';assert.equal(parsePublic(meta,profile('https://instagram.com/alice')).fans,null);
+assert.throws(()=>cleanCandidate({url:a.url,name:'Alice',fans:-1}));assert.throws(()=>cleanCandidate({url:a.url,name:'Alice',email:'broken'}));
+const db=new DatabaseSync(':memory:'),store=new WorkflowStore({db,lark:null});let state={people:[],accounts:[],projects:[],collabs:[],posts:[]},revision=0,saves=0,reads=0,blocked=false;
+const service=createDiscovery({store,getState:async()=>({state:structuredClone(state),revision}),saveState:async(next,rev)=>{assert.equal(rev,revision);state=next;revision++;saves++},validate:s=>{assert.equal(s.people.length,s.accounts.length)},checkActor(){},fetchPage:async url=>{reads++;if(blocked)throw Error('HTTP 403 平台限制');return {url,html:page};}});
+async function call(path,body,actor=admin){let status,result;await service.handle({method:body?'POST':'GET'},{},new URL('https://creator.test/api/discovery'+path),actor,body,(_,s,d)=>{status=s;result=d});assert.equal(status,200);return result;}
+try{
+ await assert.rejects(()=>call('',null,viewer),e=>e.status===403);assert.equal((await call('')).rows.length,0);
+ await call('/collect',{urls:[a.url]});assert.equal(reads,1);let rows=(await call('')).rows;assert.equal(rows.length,1);assert.equal(rows[0].accounts[0].fans,12345);assert.equal(rows[0].email,'hello@creator.test');assert.equal(state.people.length,0,'collection must not import');
+ const id=rows[0].id;await call('/star',{id,starred:true});blocked=true;await call('/collect',{urls:[a.url]});rows=(await call('')).rows;assert.equal(rows.length,1);assert.equal(rows[0].email,'hello@creator.test');assert.equal(rows[0].accounts[0].fans,12345);assert.equal(rows[0].starred,true);assert.equal(rows[0].status,'未获取');
+ assert.equal((await call('',null,owner)).rows.length,0);await assert.rejects(()=>call('/star',{id,starred:false},owner),e=>e.status===404);
+ await call('/save',{id,url:a.url,name:'Alice edited',email:'hello@creator.test',fans:'',region:'SG',sources:[{url:'https://creator.test/contact',kind:'手动补充',excerpt:'Business email'}],status:'手动补充，待核实'});let r=(await call('')).rows[0];assert.equal(r.accounts[0].fans,null);assert.equal(r.manual,true);
+ let preview=await call('/import-preview',{ids:[id],owner:'Amy'});assert.equal(preview.added,1);assert.equal(state.people.length,0);await assert.rejects(()=>call('/import',{ids:[id],owner:'Amy',confirm:true,revision:99,digest:preview.digest}),e=>e.status===409);assert.equal(saves,0);
+ await call('/star',{id,starred:false});await assert.rejects(()=>call('/import',{ids:[id],owner:'Amy',confirm:true,revision:preview.revision,digest:preview.digest}),e=>e.status===409);
+ preview=await call('/import-preview',{ids:[id],owner:'Amy'});const result=await call('/import',{ids:[id],owner:'Amy',confirm:true,revision:preview.revision,digest:preview.digest});assert.equal(result.added,1);assert.equal(saves,1);assert.equal(state.people.length,1);assert.equal(state.accounts[0].fans,null);assert(state.people[0].notes.includes('https://creator.test/contact'));
+ preview=await call('/import-preview',{ids:[id],owner:'Amy'});assert.equal(preview.added,0);assert.equal(preview.skipped,1);assert.equal(saves,1);
+ const candidate={...r,id:'fresh',accounts:[{...a,handle:'newalice',url:'https://www.tiktok.com/@newalice',fans:0}]};assert.equal(importPlan(state,[candidate],{owner:'Amy',actor:admin}).added,0,'shared email must require manual review');assert.throws(()=>importPlan(state,[candidate],{owner:'Ben',actor:owner}),e=>e.status===403);
+ const zero={...candidate,email:'new@creator.test'};assert.equal(importPlan(state,[zero],{owner:'Amy',actor:owner}).state.accounts.at(-1).fans,0);
+ console.log('PASS discovery core: public network boundaries, exact profile identity, unknown followers, public email extraction, isolated persistent records, collection failure preserves prior data, authorization, source provenance, stale-preview rejection, import once and duplicate/email conflicts.');
+}finally{db.close()}
