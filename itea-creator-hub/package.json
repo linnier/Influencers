@@ -1,6 +1,6 @@
 {
   "name": "creator-collaboration-hub",
-  "version": "2.6.47",
+  "version": "2.6.48",
   "private": true,
   "type": "module",
   "engines": {
@@ -53,6 +53,7 @@
     "test:creator-tags": "node creator-tags-ui-tests.mjs",
     "test:custom-benefits": "node custom-benefits-tests.mjs",
     "test:project-report": "node project-report-tests.mjs",
+    "test:profile-card": "node profile-card-tests.mjs",
     "test:discovery-search": "node discovery-search-tests.mjs && node discovery-search-ui-tests.mjs",
     "test:discovery": "node discovery-tests.mjs && node discovery-ui-tests.mjs && node discovery-access-tests.mjs",
     "test:mail-design": "node mail-design-tests.mjs"

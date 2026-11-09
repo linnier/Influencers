@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "itea 资料卡邮箱采集助手",
+  "version": "1.0.0",
+  "description": "手动读取当前达人主页公开资料卡：有邮箱保留，无邮箱跳过；不访问关联网站。",
+  "permissions": ["activeTab", "scripting", "clipboardWrite"],
+  "action": {"default_title": "itea 资料卡邮箱采集", "default_popup": "popup.html"}
+}

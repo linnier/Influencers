@@ -25,11 +25,8 @@ HOSTS = frozenset(['instagram.com', 'www.instagram.com', 'tiktok.com', 'www.tikt
     'danielfooddiary.com', 'www.danielfooddiary.com', 'sophieong.com', 'www.sophieong.com',
     'collabstr.com', 'www.collabstr.com', 'www.bing.com', 'bing.com', 'cn.bing.com'])
 TARGETS = [
-    ('DanielFoodDiary — 官网合作页', 'https://danielfooddiary.com/advertising/'),
-    ('Sophie Ong — 个人网站', 'https://sophieong.com/'),
-    ('Nicole Low — 公开合作资料页', 'https://collabstr.com/nlhm99'),
-    ('DanielFoodDiary — Instagram', 'https://www.instagram.com/danielfooddiary/'),
-    ('DanielFoodDiary — TikTok', 'https://www.tiktok.com/@danielfooddiary'),
+    ('DanielFoodDiary — Instagram资料卡', 'https://www.instagram.com/danielfooddiary/'),
+    ('DanielFoodDiary — TikTok资料卡', 'https://www.tiktok.com/@danielfooddiary'),
 ]
 LIMIT_SECONDS, LIMIT_REQUESTS, LIMIT_BYTES = 90, 14, 8 * 1024 * 1024
 PAGE_BYTES = 2 * 1024 * 1024
@@ -418,7 +415,9 @@ def checked_page(client, robots, label, url):
                 row.update(reason='响应不是可读取的网页正文')
             else:
                 data = parse_page(response['text'], url)
-                row.update(data, status='已读取', final_url=response['url'])
+                row.update(data, status='已读取' if data['emails'] else '无邮箱跳过', final_url=response['url'])
+                if not data['emails']:
+                    row['reason'] = '主页资料卡已读取，没有公开邮箱，按规则跳过。'
     except PilotStop:
         raise
     except Exception as e:
@@ -427,7 +426,7 @@ def checked_page(client, robots, label, url):
     return row
 
 
-def run_pilot(client=None, keyword='food', region='Singapore', output_root=None, targets=None, discover=True):
+def run_pilot(client=None, keyword='food', region='Singapore', output_root=None, targets=None, discover=False):
     client = client or Client()
     robots = Robots(client)
     started, usage = time.monotonic(), resource.getrusage(resource.RUSAGE_SELF)
@@ -438,7 +437,7 @@ def run_pilot(client=None, keyword='food', region='Singapore', output_root=None,
               'application_changes': False, 'database_writes': False, 'paid_api_calls': False, 'search_api_keys_used': False}
     try:
         if not discover:
-            report['discovery'] = {'status': '未执行', 'reason': '本次仅复测TikTok，未运行关键词发现', 'candidate_count': None}
+            report['discovery'] = {'status': '未执行', 'reason': '本次只读主页资料卡，未运行关键词发现', 'candidate_count': None}
         else:
             query = '(site:instagram.com OR site:tiktok.com) "%s" "%s"' % (keyword.replace('"', ' ')[:100], region.replace('"', ' ')[:60])
             feed_url = 'https://www.bing.com/search?' + urllib.parse.urlencode({'q': query, 'format': 'rss'})
@@ -497,9 +496,10 @@ def run_pilot(client=None, keyword='food', region='Singapore', output_root=None,
         discovery = report['discovery']
         discovery_detail = discovery.get('reason') or ('有效候选 %s 位' % discovery['candidate_count'] if discovery.get('candidate_count') is not None else '尚未取得可判断的结果')
         print('关键词发现：%s；%s' % (discovery.get('status', '未完成'), discovery_detail))
-        print('已读取 %s / %s 个已执行样本；发现公开邮箱 %s 个（未验证投递有效性）' % (
+        print('保留有邮箱资料 %s / %s 个已执行样本；发现公开邮箱 %s 个（未验证投递有效性）' % (
             sum(r['status'] == '已读取' for r in report['pages']), len(report['pages']),
             len({email.lower() for r in report['pages'] for email in r['emails']})))
+        print('无邮箱跳过 %s 个；读取失败/受限 %s 个' % (sum(r['status'] == '无邮箱跳过' for r in report['pages']), sum(r['status'] not in ('已读取', '无邮箱跳过') for r in report['pages'])))
         print('耗时 %.2f 秒 | 进程峰值内存 %.2f MiB | CPU时间 %.3f 秒 | HTTP尝试 %s 次 | 正文下载 %.2f KiB' % (
             wall, peak_mib, cpu, client.requests, client.download_bytes / 1024))
         for check in robots.checks:
@@ -522,6 +522,7 @@ def main():
     parser = argparse.ArgumentParser(description='itea公开网页轻量试采：限时90秒、串行、只写/tmp报告、不访问应用数据库')
     parser.add_argument('--keyword', default='food')
     parser.add_argument('--region', default='Singapore')
+    parser.add_argument('--keyword-probe', action='store_true', help='额外诊断公开关键词搜索源，默认不执行')
     parser.add_argument('--only-tiktok', action='store_true', help='仅复测1个TikTok主页，跳过搜索与其他网站')
     args = parser.parse_args()
     def deadline(signum, frame):
@@ -534,10 +535,10 @@ def main():
         pass
     previous = signal.signal(signal.SIGALRM, deadline)
     signal.alarm(LIMIT_SECONDS)
-    print('itea TikTok单项复测：1个公开主页，robots读取上限512KiB。' if args.only_tiktok else 'itea自建爬虫小规模测试：5个固定样本，关键词候选最多再读取2个。', flush=True)
+    print('itea TikTok单项复测：1个公开主页，robots读取上限512KiB。' if args.only_tiktok else 'itea资料卡邮箱试采：2个平台主页，有邮箱保留，无邮箱跳过。', flush=True)
     print('单任务运行；最多14次HTTP尝试、约8MiB响应正文；不安装依赖、不登录、不修改网站。', flush=True)
     try:
-        run_pilot(keyword=args.keyword, region=args.region, targets=[TARGETS[-1]] if args.only_tiktok else None, discover=not args.only_tiktok)
+        run_pilot(keyword=args.keyword, region=args.region, targets=[TARGETS[-1]] if args.only_tiktok else None, discover=args.keyword_probe and not args.only_tiktok)
     finally:
         signal.alarm(0)
         signal.signal(signal.SIGALRM, previous)

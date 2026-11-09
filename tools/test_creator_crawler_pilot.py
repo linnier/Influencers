@@ -200,6 +200,15 @@ class PilotTests(unittest.TestCase):
         self.assertEqual(document['title'], 'Verify & Access')
         self.assertEqual(pilot.robots_document('# comment only', 'text/plain')['kind'], 'empty_rules')
 
+    def test_profile_card_without_email_is_skipped_not_failed(self):
+        url = 'https://www.tiktok.com/@danielfooddiary'
+        data = {'userInfo': {'user': {'uniqueId': 'danielfooddiary', 'nickname': 'Creator', 'signature': 'Tea lover'}, 'stats': {'followerCount': 0}}}
+        client = FakeClient({'https://www.tiktok.com/robots.txt': response('User-agent: *\nDisallow: /api/', content_type='text/plain'), url: response('<script>' + json.dumps(data) + '</script>')})
+        row = pilot.checked_page(client, pilot.Robots(client), 'sample', url)
+        self.assertEqual(row['status'], '无邮箱跳过')
+        self.assertEqual(row['followers'], 0)
+        self.assertEqual(row['emails'], [])
+
     def test_rss_is_not_fake_empty_and_profiles_only(self):
         source = '<rss><channel><item><link>https://instagram.com/alice/</link><title>Alice</title></item><item><link>https://instagram.com/p/abc/</link></item><item><link>https://instagram.com/alice/?igsh=x</link></item></channel></rss>'
         self.assertEqual(len(pilot.parse_feed(source)), 1)
@@ -240,7 +249,7 @@ class PilotTests(unittest.TestCase):
             'https://sophieong.com/': response('<title>=formula</title><p>For business and collaborations please email public@creator.test. Thank you for your interest.</p>')})
         with tempfile.TemporaryDirectory() as temp:
             with contextlib.redirect_stdout(io.StringIO()):
-                report, output = pilot.run_pilot(client, targets=[('sample', 'https://sophieong.com/')], output_root=temp)
+                report, output = pilot.run_pilot(client, targets=[('sample', 'https://sophieong.com/')], output_root=temp, discover=True)
             self.assertTrue(report['test_mode'])
             self.assertFalse(report['application_changes'])
             self.assertFalse(report['database_writes'])

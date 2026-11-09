@@ -34,6 +34,7 @@ const db=new DatabaseSync(resolve(dataDir,'creator-hub.sqlite'));db.exec('PRAGMA
 db.exec('CREATE TABLE IF NOT EXISTS workspace (id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL, state TEXT NOT NULL); CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY, revision INTEGER NOT NULL, changed_at TEXT NOT NULL);');
 const empty={people:[],accounts:[],projects:[],collabs:[],posts:[]};db.prepare('INSERT OR IGNORE INTO workspace (id,revision,state) VALUES (1,0,?)').run(JSON.stringify(empty));
 const appPathJS=prepareAsset(readFileSync(resolve(root,'public/app-path.js')));
+const discoveryHelper=prepareAsset(readFileSync(resolve(root,'public/discovery-helper.zip')));
 const reportHTML=prepareAsset(readFileSync(resolve(root,'public/project-report.html')));
 const html=prepareAsset(readFileSync(resolve(root,'public/index.html'))),loginHTML=prepareAsset(readFileSync(resolve(root,'public/login.html'))),loginJS=prepareAsset(readFileSync(resolve(root,'public/login.js')));
 function redirect(res,to){res.writeHead(303,{'Location':to,'Cache-Control':'no-store'});res.end();}
@@ -101,6 +102,7 @@ const server=http.createServer(async(req,res)=>{
   await context.run(actor,async()=>{
   let payload;
   if(req.method==='POST'&&url.pathname.startsWith('/api/')){forbidden(new URL(req.headers.origin||'https://invalid').host===req.headers.host,'禁止跨站修改');let bytes=0;const chunks=[];for await(const chunk of req){bytes+=chunk.length;forbidden(bytes<=2*1024*1024,'请求过长');chunks.push(chunk);}const buffer=Buffer.concat(chunks);try{payload=JSON.parse(buffer.toString())}catch{throw Object.assign(Error('请求格式错误'),{status:400})}req[Symbol.asyncIterator]=()=>Readable.from([buffer])[Symbol.asyncIterator]();}
+  if(url.pathname==='/discovery-helper.zip'){forbidden(actor.role==='admin'||actor.role==='owner','查阅账号不能使用资料卡采集助手');if(req.method!=='GET'){json(res,405,{error:'不支持该请求'});return;}sendPrepared(req,res,discoveryHelper,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename=itea-profile-card-helper.zip','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return;}
   if(url.pathname==='/api/me'){json(res,200,{username:actor.username,role:actor.role,owner:actor.owner,contactVisible:actor.role!=='viewer',canExport:actor.role!=='viewer'});return;}
   if(['/project-report','/api/reports/project'].includes(url.pathname)){
    forbidden(actor.role!=='viewer','查阅账号不能导出报告');
