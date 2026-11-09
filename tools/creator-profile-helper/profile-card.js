@@ -5,9 +5,27 @@ function shown(el){if(!el)return false;for(let node=el;node&&node.nodeType===1;n
 function visibleText(el){if(!shown(el))return '';const d=el.ownerDocument,walker=d.createTreeWalker(el,4);let node;const output=[];while((node=walker.nextNode())){const parent=node.parentElement;if(!parent||parent.closest('script,style,noscript,template,input,textarea')||!shown(parent))continue;output.push(node.nodeValue);}return clean(output.join(' ').replace(/\s+/g,' '),4000);}
 function emails(text){return [...new Set((text.match(/(?<![A-Za-z0-9._%+-])([A-Za-z0-9._%+-]{1,64}\s*@\s*[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,24})(?![A-Za-z])/g)||[]).map(v=>v.replace(/\s+/g,'')))].slice(0,5);}
 function count(display){const s=clean(display,80).replace(/[,\s]/g,'');return /^\d+$/.test(s)&&Number.isSafeInteger(Number(s))?Number(s):null;}
-function read(d){const account=profile(d.location.href);if(!account)return {status:'error',reason:'请先打开完整的 Instagram 或 TikTok 达人主页，当前不是主页资料卡。'};let canonical=profile(d.querySelector('link[rel="canonical"]')?.href||'');if(canonical&&canonical.url!==account.url)return {status:'error',reason:'页面账号信息尚未更新，请等待主页加载完成后重试。'};let card,bio,name,follower;
+// Instagram can keep an old canonical URL after SPA navigation. Trust only
+// the current URL plus a matching visible profile heading, never metadata alone.
+function instagramCard(d,account){
+ const matches=el=>shown(el)&&visibleText(el).replace(/^@/,'').toLowerCase()===account.handle;
+ const conventional=[...d.querySelectorAll('main header,[role="main"] header')];
+ for(const card of conventional)if(shown(card)&&[...card.querySelectorAll('h1,h2,h3,[role="heading"],a,button')].some(matches))return card;
+ // New layouts may use divs instead of header. Stay inside the nearest
+ // profile region containing the account heading and its own followers link.
+ for(const heading of d.querySelectorAll('main h1,main h2,main h3,main [role="heading"],[role="main"] h1,[role="main"] h2,[role="main"] h3,[role="main"] [role="heading"]')){
+  if(!matches(heading)||heading.closest('article,footer,[role="dialog"]'))continue;
+  for(let region=heading.parentElement;region&&!region.matches('main,[role="main"],body,html');region=region.parentElement){
+   if(region.querySelector('article,footer,[role="dialog"],a[href^="/p/"],a[href^="/reel/"]'))break;
+   const ownFollowers=[...region.querySelectorAll('a[href]')].some(a=>{try{const u=new URL(a.href);return shown(a)&&u.origin===d.location.origin&&u.pathname.replace(/\/$/,'')==='/'+account.handle+'/followers'}catch{return false}});
+   if(ownFollowers)return region;
+  }
+ }
+ return null;
+}
+function read(d){const account=profile(d.location.href);if(!account)return {status:'error',reason:'请先打开完整的 Instagram 或 TikTok 达人主页，当前不是主页资料卡。'};let card,bio,name,follower;
 if(account.platform==='TikTok'){const title=d.querySelector('[data-e2e="user-title"]');if(!shown(title)||visibleText(title).replace(/^@/,'').toLowerCase()!==account.handle)return {status:'error',reason:'尚未读到目标达人的资料卡，可能还在加载、需要登录或返回了其他页面。'};bio=d.querySelector('[data-e2e="user-bio"]');if(!shown(bio))return {status:'error',reason:'尚未读到资料卡简介，无法判断是否有公开邮箱。'};card=bio;name=visibleText(d.querySelector('[data-e2e="user-subtitle"]'))||account.handle;follower=d.querySelector('[data-e2e="followers-count"]');}
-else{card=d.querySelector('main header,[role="main"] header');if(!shown(card))return {status:'error',reason:'未找到达人主页资料卡。请等待正常主页加载，当前可能是登录或验证页面。'};const identity=[...card.querySelectorAll('h1,h2,h3,[role="heading"],a,button')].some(el=>shown(el)&&visibleText(el).replace(/^@/,'').toLowerCase()===account.handle);if(!identity)return {status:'error',reason:'无法确认资料卡与当前达人账号一致，请等待主页加载完成。'};bio=card;const heading=card.querySelector('h1');name=visibleText(heading);if(!name||name.toLowerCase()===account.handle)name=account.handle;const link=[...card.querySelectorAll('a[href]')].find(el=>{try{return new URL(el.href).pathname.replace(/\/$/,'')==='/'+account.handle+'/followers'}catch{return false}});follower=link?.querySelector('[title]')||link;}
+else{card=instagramCard(d,account);if(!card)return {status:'error',reason:'未能确认当前账号的可见资料卡。请刷新达人主页后重试；仍失败请反馈页面截图。'};bio=card;const heading=card.querySelector('h1');name=visibleText(heading);if(!name||name.toLowerCase()===account.handle)name=account.handle;const link=[...card.querySelectorAll('a[href]')].find(el=>{try{return new URL(el.href).pathname.replace(/\/$/,'')==='/'+account.handle+'/followers'}catch{return false}});follower=link?.querySelector('[title]')||link;}
 const text=visibleText(bio),mailto=[];for(const a of card.querySelectorAll('a[href]'))if(shown(a)&&a.getAttribute('href').toLowerCase().startsWith('mailto:')){try{mailto.push(decodeURIComponent(a.getAttribute('href').slice(7).split('?')[0]))}catch{}}const cardText=clean(text+(mailto.length?'\n资料卡公开邮箱链接：'+mailto.join(' '):''),6000),found=emails(cardText);if(!found.length)return {status:'skipped',reason:'资料卡没有显示公开邮箱，按规则跳过。不会追查关联网站。',url:account.url};const fansDisplay=shown(follower)?clean(follower.getAttribute('title')||visibleText(follower),80).replace(/(?:\bfollowers?\b|粉丝)/ig,'').trim():'';return {status:'collected',record:{schema:'itea.creator.profile-card.v1',...account,name:clean(name,60),email:found[0],bio:clean(text,3000),cardText,emailSource:'visible-profile-card',fans:count(fansDisplay),fansDisplay,capturedAt:new Date().toISOString()}};}
 root.IteaProfileCard={read,profile,emails,count};
 })(globalThis);
