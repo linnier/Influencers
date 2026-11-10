@@ -26,14 +26,14 @@ function instagramCard(d,account){
 function read(d){const account=profile(d.location.href);if(!account)return {status:'error',reason:'请先打开完整的 Instagram 或 TikTok 达人主页，当前不是主页资料卡。'};let card,bio,name,follower;
 if(account.platform==='TikTok'){
  const normalize=value=>clean(value).replace(/[\u200b-\u200f\ufeff]/g,'').replace(/^@/,'').trim().toLowerCase();
- const titles=[...d.querySelectorAll('[data-e2e="user-title"],main h1,main h2,main [role="heading"],[role="main"] h1,[role="main"] h2,[role="main"] [role="heading"]')].filter(el=>shown(el)&&!el.closest('article,aside,footer,[role="list"],[role="listitem"]'));
- const explicit=titles.filter(el=>el.matches('[data-e2e="user-title"]'));
+ const titles=[...d.querySelectorAll('[data-e2e="user-title"],[data-e2e="user-subtitle"],[data-e2e="user-unique-id"],[data-e2e="user-username"],main h1,main h2,main [role="heading"],[role="main"] h1,[role="main"] h2,[role="main"] [role="heading"]')].filter(el=>shown(el)&&!el.closest('article,aside,footer,[role="list"],[role="listitem"]'));
+ const explicit=titles.filter(el=>el.matches('[data-e2e="user-title"],[data-e2e="user-subtitle"],[data-e2e="user-unique-id"],[data-e2e="user-username"]'));
  const title=(explicit.length?explicit:titles.slice(0,2)).find(el=>normalize(visibleText(el))===account.handle||[...el.querySelectorAll('span,[dir="auto"]')].some(child=>shown(child)&&normalize(visibleText(child))===account.handle));
  if(!title){const seen=titles.slice(0,3).map(el=>clean(visibleText(el),70)).join(' / ');return {status:'error',reason:'TikTok 账号核对失败：当前网址 @'+account.handle+'；'+(seen?'可见账号标题为“'+seen+'”，未匹配。':'未识别到可见账号标题（页面结构可能已变化）。')+'请检查工作标签页或反馈主页截图。'};}
  // Search from the matching title's ancestors, ignoring hidden stale SPA nodes.
  for(let region=title.parentElement;region&&region!==d.body;region=region.parentElement){
   const matches=[...region.querySelectorAll('[data-e2e="user-bio"],[data-e2e="user-desc"],[data-e2e="user-description"]')].filter(el=>shown(el)&&!el.closest('article,aside,footer,[role="list"],[role="listitem"]'));
-  if(matches.length===1){bio=matches[0];card=bio;name=visibleText([...region.querySelectorAll('[data-e2e="user-subtitle"]')].find(shown))||account.handle;follower=[...region.querySelectorAll('[data-e2e="followers-count"]')].find(shown);break;}
+  if(matches.length===1){bio=matches[0];card=bio;name=visibleText([...region.querySelectorAll('[data-e2e="user-subtitle"],[data-e2e="user-title"]')].find(el=>shown(el)&&el!==title&&normalize(visibleText(el))!==account.handle))||account.handle;follower=[...region.querySelectorAll('[data-e2e="followers-count"]')].find(shown);break;}
   if(region.matches('main,[role="main"]'))break;
  }
  if(!bio)return {status:'error',reason:'已核对 TikTok 账号 @'+account.handle+'，但未识别到可见简介区域。无法据此判断为无邮箱，请反馈主页截图。'};
