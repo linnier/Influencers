@@ -22,11 +22,15 @@ function author(d,expected){
  const isMedia=el=>shown(el)&&!el.closest('nav,aside,footer')&&rect(el).width>=180&&rect(el).height>=180;
  const scopes=[...[...d.querySelectorAll('[role="dialog"]')].filter(shown),...[...d.querySelectorAll('main,[role="main"]')].filter(shown)];
  const scope=scopes.find(el=>[...el.querySelectorAll('video,img')].some(isMedia))||d.body;
- const media=[...scope.querySelectorAll('video,img')].filter(isMedia).slice(0,20),primary=media[0];
- // Restrict author discovery to the visible post, never recommendations or comments.
- const article=[...d.querySelectorAll('main article,[role="main"] article,[role="dialog"] article,main [role="article"],[role="main"] [role="article"]')].find(el=>shown(el)&&(!primary||el.contains(primary)));
+ // DOM order can put recommendation images before the visible post video.
+ const media=[...scope.querySelectorAll('video,img')].filter(isMedia).sort((a,b)=>rect(a).top-rect(b).top||rect(a).left-rect(b).left).slice(0,30),primary=media[0];
  const named=a=>{const p=root.IteaProfileCard.profile(a.href);return shown(a)&&p?.platform==='Instagram'&&visibleText(a).replace(/^@/,'').toLowerCase()===p.handle?p:null;};
  const excluded='ul,ol,[role="list"],[role="listitem"],[data-testid*="comment"],[data-e2e*="comment"]';
+ const scrolling=el=>{for(let p=el.parentElement;p&&p!==scope;p=p.parentElement){if(p.clientHeight>0&&p.scrollHeight>p.clientHeight+8&&/auto|scroll/.test(d.defaultView.getComputedStyle(p).overflowY))return true;}return false;};
+ const names=[];for(const anchor of scope.querySelectorAll('a[href]')){if(anchor.closest('nav,aside,footer,'+excluded)||scrolling(anchor))continue;const owner=named(anchor);if(!owner)continue;let box=rect(anchor);if(box.height<=0){for(let p=anchor.parentElement;p&&p!==scope;p=p.parentElement){box=rect(p);if(box.height>0)break;}}names.push({anchor,owner,box});}
+ const leading=names.slice().sort((a,b)=>a.box.top-b.box.top||a.box.left-b.box.left)[0];
+ // Restrict author discovery to the visible post, never recommendations or comments.
+ const article=[...d.querySelectorAll('main article,[role="main"] article,[role="dialog"] article,main [role="article"],[role="main"] [role="article"]')].find(el=>shown(el)&&(!primary||el.contains(primary))&&(!leading||el.contains(leading.anchor)));
  const headers=article?[...article.querySelectorAll('header')].filter(el=>shown(el)&&!el.closest(excluded)):[];
  for(const header of headers){const owners=[...header.querySelectorAll('a[href]')].filter(a=>!a.closest(excluded)).map(named).filter(Boolean);if(owners.length)return {status:'found',url:owners[0].url,postUrl:current};}
  // Some layouts replace header with divs. Require both the named owner link
@@ -43,24 +47,31 @@ function author(d,expected){
  // New Instagram layouts use ordinary divs for the media and right-hand panel.
  // Tie the author bar to the primary media by geometry, plus avatar, account
  // link and options control; neither caption mentions nor comment names suffice.
- const bars=[];
+ const bars=[],pairs=[],complete=[];
  const options=el=>[...el.querySelectorAll('button,[role="button"],svg[aria-label]')].some(n=>shown(n)&&(/more|options|更多|选项/i.test(n.getAttribute('aria-label')||n.getAttribute('title')||'')||/^(?:⋯|…|\.\.\.)$/.test(visibleText(n))));
- if(primary){const m=rect(primary);
-  for(const a of scope.querySelectorAll('a[href]')){
-   if(a.closest('nav,aside,footer,'+excluded))continue;const owner=named(a);if(!owner)continue;
+ if(primary){
+  for(const {anchor:a,owner} of names){
    for(let region=a.parentElement,depth=0;region&&region!==scope&&depth<12;region=region.parentElement,depth++){
     const r=rect(region);if(!shown(region)||r.width<=0||r.height<=0||r.height>110||r.width>1000)continue;
-    if(region.querySelector(excluded+',textarea,input,video')||region.contains(primary))break;
+    if(region.querySelector(excluded+',textarea,input,video')||media.some(el=>region.contains(el)))break;
     const smallAvatar=[...region.querySelectorAll('img')].some(img=>{const b=rect(img);return shown(img)&&b.width>0&&b.width<=85&&b.height>0&&b.height<=85;});
-    const right=r.left>=m.right-36&&r.left<=m.right+96&&Math.abs(r.top-m.top)<=36;
-    const overlap=Math.min(r.right,m.right)-Math.max(r.left,m.left);
-    const above=r.bottom<=m.top+12&&m.top-r.bottom<=48&&overlap>=Math.min(r.width,m.width)*.5;
-    const hasMenu=options(region);if(bars.length<12)bars.push({handle:owner.handle,rect:r,avatar:smallAvatar,menu:hasMenu,aligned:right||above});
-    if(smallAvatar&&hasMenu&&(right||above))return {status:'found',url:owner.url,postUrl:current};
+    const hasMenu=options(region),eligible=media.filter(el=>rect(el).top<=rect(primary).top+120);let aligned=false;
+    for(const el of eligible){const m=rect(el),right=r.left>=m.right-36&&r.left<=m.right+96&&Math.abs(r.top-m.top)<=36,overlap=Math.min(r.right,m.right)-Math.max(r.left,m.left),above=r.bottom<=m.top+12&&m.top-r.bottom<=48&&overlap>=Math.min(r.width,m.width)*.5;
+     if(right||above){aligned=true;if(smallAvatar&&hasMenu)pairs.push({owner,bar:r,media:m});}
+    }
+    if(smallAvatar&&hasMenu)complete.push({owner,bar:r});
+    if(bars.length<24&&!bars.some(b=>b.handle===owner.handle&&b.rect.top===r.top&&b.rect.left===r.left&&b.rect.width===r.width&&b.rect.height===r.height&&b.avatar===smallAvatar&&b.menu===hasMenu))bars.push({handle:owner.handle,rect:r,avatar:smallAvatar,menu:hasMenu,aligned});
    }
   }
  }
- return {status:'error',reason:'未能确认帖子的顶部作者栏。请复制页面诊断反馈；不会从文案、评论或推荐列表猜测作者。',diagnostic:{schema:'itea.post-layout.v1',postUrl:current,articleFound:!!article,mainFound:scopes.length>0,primaryMedia:primary?rect(primary):null,mediaCount:media.length,candidateBars:bars}};
+ pairs.sort((a,b)=>a.bar.top-b.bar.top||Math.abs(a.bar.left-a.media.right)-Math.abs(b.bar.left-b.media.right));
+ // Some post players render via canvas/CSS; the first readable images then
+ // belong to recommendations far below. Accept only the leading, complete
+ // account+avatar+options bar outside a scrollable caption/comment pane.
+ const topBar=complete.filter(b=>leading&&b.owner.url===leading.owner.url&&b.bar.top<=leading.box.top+10&&leading.box.top<=b.bar.bottom+10&&b.bar.top<=rect(scope).top+120&&media.every(el=>rect(el).top>b.bar.bottom+160)).sort((a,b)=>a.bar.top-b.bar.top)[0];
+ if(topBar)return {status:'found',url:topBar.owner.url,postUrl:current};
+ if(pairs.length)return {status:'found',url:pairs[0].owner.url,postUrl:current};
+ return {status:'error',reason:'未能确认帖子的顶部作者栏。请复制页面诊断反馈；不会从文案、评论或推荐列表猜测作者。',diagnostic:{schema:'itea.post-layout.v1',postUrl:current,articleFound:!!article,mainFound:scopes.length>0,primaryMedia:primary?rect(primary):null,mediaCount:media.length,mediaRects:media.map(rect),candidateBars:bars}};
 }
 root.IteaScan={gate,scan,post,author};
 })(globalThis);
