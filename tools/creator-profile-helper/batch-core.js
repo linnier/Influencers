@@ -1,8 +1,8 @@
 (function(root){'use strict';
 const LIMIT=300;
-function searchUrl(platform,keyword){const q=encodeURIComponent(String(keyword||'').trim());if(!q)throw Error('请填写搜索关键词');if(platform==='TikTok')return 'https://www.tiktok.com/search/user?q='+q;if(platform==='Instagram')return 'https://www.instagram.com/explore/search/keyword/?q='+q;throw Error('不支持的平台');}
+function searchUrl(platform,keyword,searchType='content'){const q=encodeURIComponent(String(keyword||'').trim());if(!q)throw Error('请填写搜索关键词');if(platform==='TikTok')return 'https://www.tiktok.com/search'+(searchType==='accounts'?'/user':'')+'?q='+q;if(platform==='Instagram')return 'https://www.instagram.com/explore/search/keyword/?q='+q;throw Error('不支持的平台');}
 function links(raw){const valid=[],invalid=[];for(const s of String(raw||'').split(/[\s,，]+/).filter(Boolean)){const p=root.IteaProfileCard.profile(s);if(p){if(!valid.includes(p.url))valid.push(p.url)}else invalid.push(s)}return {valid:valid.slice(0,LIMIT),invalid,truncated:valid.length>LIMIT};}
-function config(value){const limit=Math.max(1,Math.min(LIMIT,Number(value.limit)||100));return {...value,limit,maxRounds:Math.min(120,Math.max(12,Math.ceil(limit/10)*4)),postLimit:Math.min(900,limit*3),paceMs:Number(value.paceMs)===2000?2000:800,urls:(value.urls||[]).slice(0,LIMIT)};}
+function config(value){const limit=Math.max(1,Math.min(LIMIT,Number(value.limit)||100));return {...value,searchType:value.searchType==='accounts'?'accounts':'content',limit,maxRounds:Math.min(120,Math.max(12,Math.ceil(limit/10)*4)),postLimit:Math.min(900,limit*3),paceMs:Number(value.paceMs)===2000?2000:800,urls:(value.urls||[]).slice(0,LIMIT)};}
 function newState(value){return {version:1,phase:'idle',stage:value.mode==='links'?'collection':'discovery',config:config(value),candidates:(value.urls||[]).slice(0,LIMIT),cursor:0,rows:[],outcomes:[],searchRound:0,emptyRounds:0,posts:[],postCursor:0,cachedUrls:[],observedProfiles:[],searchTab:null,workTab:null,reason:'',activeItem:''};}
 class Runner{
  constructor(state,io){state.config=config(state.config);for(const key of ['posts','cachedUrls','observedProfiles'])state[key]=state[key]||[];state.postCursor=state.postCursor||0;this.state=state;this.io=io;this.active=false;this.cancelled=false;this.known=new Set(state.config.knownUrls||[]);}
@@ -33,7 +33,7 @@ class Runner{
   s.reason='';
   if(s.stage==='discovery'){
    s.phase='discovering';s.activeItem='';await this.save();if(this.cancelled)return;
-   s.searchTab=await this.io.searchTab(s.searchTab,searchUrl(s.config.platform,s.config.keyword));if(this.cancelled)return;await this.save();
+   s.searchTab=await this.io.searchTab(s.searchTab,searchUrl(s.config.platform,s.config.keyword,s.config.searchType));if(this.cancelled)return;await this.save();
    while(s.searchRound<s.config.maxRounds&&s.candidates.length<s.config.limit&&s.posts.length<s.config.postLimit){
     if(this.cancelled)return;const result=await this.io.scan(s.searchTab,s.config.platform);if(this.cancelled)return;
     if(result.blocked||result.error){await this.pause(result.reason||'搜索页暂时无法读取，请检查工作标签页后继续。');return;}

@@ -1,6 +1,7 @@
 (function(root){'use strict';
 const {shown,visibleText}=root.IteaProfileCard;
 function post(href){let u;try{u=new URL(href)}catch{return null}if(u.protocol!=='https:'||u.username||u.password||u.port||!['www.instagram.com','instagram.com'].includes(u.hostname))return null;const m=u.pathname.match(/^\/(p|reel|reels)\/([A-Za-z0-9_-]{1,80})\/?$/);return m?'https://www.instagram.com/'+(m[1]==='p'?'p':'reel')+'/'+m[2]+'/':null;}
+function tiktokAuthor(href){let u;try{u=new URL(href)}catch{return null}if(u.protocol!=='https:'||u.username||u.password||u.port||!['www.tiktok.com','tiktok.com'].includes(u.hostname))return null;const match=u.pathname.match(/^\/@([\w.]{1,80})\/(?:video|photo)\/\d{1,30}\/?$/);return match?root.IteaProfileCard.profile('https://www.tiktok.com/@'+match[1]):null;}
 function gate(d){
  const path=d.location.pathname;
  if(/\/(?:accounts\/login|login|challenge|checkpoint|auth)(?:\/|$)/i.test(path))return '平台要求登录或验证，请在工作标签页完成后继续。';
@@ -12,7 +13,8 @@ function gate(d){
 }
 function scan(d,platform,seen={}){const seenUrls=new Set(seen.urls||[]),seenPosts=new Set(seen.posts||[]);const reason=gate(d);if(reason)return {blocked:true,reason};const u=new URL(d.location.href);const correct=platform==='TikTok'?u.hostname==='www.tiktok.com'&&u.pathname.startsWith('/search'):u.hostname==='www.instagram.com'&&u.pathname.startsWith('/explore/search');if(!correct)return {error:true,reason:'当前工作页不是预期的搜索页面，请检查是否被重定向。'};
  const main=d.querySelector('main,[role="main"]');if(!shown(main))return {error:true,reason:'未找到搜索结果区域，请等待页面加载，或检查平台是否要求登录。'};
- const urls=[],posts=[];for(const a of main.querySelectorAll('a[href]')){if(!shown(a)||a.closest('nav,footer,aside'))continue;const p=root.IteaProfileCard.profile(a.href),entry=platform==='Instagram'?post(a.href):null;if(p&&p.platform===platform&&!seenUrls.has(p.url)&&!urls.includes(p.url)&&urls.length<300)urls.push(p.url);if(entry&&!seenPosts.has(entry)&&!posts.includes(entry)&&posts.length<900)posts.push(entry);if(urls.length>=300&&posts.length>=900)break;}
+ const accountsSearch=platform==='TikTok'&&/^\/search\/user\/?$/.test(u.pathname);
+ const urls=[],posts=[];for(const a of main.querySelectorAll('a[href]')){if(!shown(a)||a.closest('nav,footer,aside'))continue;const p=platform==='TikTok'&&!accountsSearch?tiktokAuthor(a.href):root.IteaProfileCard.profile(a.href),entry=platform==='Instagram'?post(a.href):null;if(p&&p.platform===platform&&!seenUrls.has(p.url)&&!urls.includes(p.url)&&urls.length<300)urls.push(p.url);if(entry&&!seenPosts.has(entry)&&!posts.includes(entry)&&posts.length<900)posts.push(entry);if(urls.length>=300&&posts.length>=900)break;}
  return {urls,posts,ready:true};
 }
 function author(d,expected){
@@ -73,5 +75,5 @@ function author(d,expected){
  if(pairs.length)return {status:'found',url:pairs[0].owner.url,postUrl:current};
  return {status:'error',reason:'未能确认帖子的顶部作者栏。请复制页面诊断反馈；不会从文案、评论或推荐列表猜测作者。',diagnostic:{schema:'itea.post-layout.v1',postUrl:current,articleFound:!!article,mainFound:scopes.length>0,primaryMedia:primary?rect(primary):null,mediaCount:media.length,mediaRects:media.map(rect),candidateBars:bars}};
 }
-root.IteaScan={gate,scan,post,author};
+root.IteaScan={gate,scan,post,author,tiktokAuthor};
 })(globalThis);
