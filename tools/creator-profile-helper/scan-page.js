@@ -10,10 +10,10 @@ function gate(d){
  if(/verify (?:to continue|you are human)|security check|too many requests|temporarily blocked|try again later|unusual activity|访问过于频繁|操作频繁|稍后再试|安全验证|请完成验证/i.test(text))return '平台出现验证或访问限制，任务已暂停。';
  return '';
 }
-function scan(d,platform){const reason=gate(d);if(reason)return {blocked:true,reason};const u=new URL(d.location.href);const correct=platform==='TikTok'?u.hostname==='www.tiktok.com'&&u.pathname.startsWith('/search'):u.hostname==='www.instagram.com'&&u.pathname.startsWith('/explore/search');if(!correct)return {error:true,reason:'当前工作页不是预期的搜索页面，请检查是否被重定向。'};
+function scan(d,platform,seen={}){const seenUrls=new Set(seen.urls||[]),seenPosts=new Set(seen.posts||[]);const reason=gate(d);if(reason)return {blocked:true,reason};const u=new URL(d.location.href);const correct=platform==='TikTok'?u.hostname==='www.tiktok.com'&&u.pathname.startsWith('/search'):u.hostname==='www.instagram.com'&&u.pathname.startsWith('/explore/search');if(!correct)return {error:true,reason:'当前工作页不是预期的搜索页面，请检查是否被重定向。'};
  const main=d.querySelector('main,[role="main"]');if(!shown(main))return {error:true,reason:'未找到搜索结果区域，请等待页面加载，或检查平台是否要求登录。'};
- const urls=[],posts=[];for(const a of main.querySelectorAll('a[href]')){if(!shown(a)||a.closest('nav,footer,aside'))continue;const p=root.IteaProfileCard.profile(a.href),entry=platform==='Instagram'?post(a.href):null;if(p&&p.platform===platform&&!urls.includes(p.url)&&urls.length<30)urls.push(p.url);if(entry&&!posts.includes(entry)&&posts.length<30)posts.push(entry);if(urls.length>=30&&posts.length>=30)break;}
- return {urls,posts};
+ const urls=[],posts=[];for(const a of main.querySelectorAll('a[href]')){if(!shown(a)||a.closest('nav,footer,aside'))continue;const p=root.IteaProfileCard.profile(a.href),entry=platform==='Instagram'?post(a.href):null;if(p&&p.platform===platform&&!seenUrls.has(p.url)&&!urls.includes(p.url)&&urls.length<300)urls.push(p.url);if(entry&&!seenPosts.has(entry)&&!posts.includes(entry)&&posts.length<900)posts.push(entry);if(urls.length>=300&&posts.length>=900)break;}
+ return {urls,posts,ready:true};
 }
 function author(d,expected){
  const reason=gate(d);if(reason)return {status:'blocked',reason};

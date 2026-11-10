@@ -1,0 +1,9 @@
+import assert from 'node:assert/strict';import vm from 'node:vm';import {readFileSync} from 'node:fs';
+const store={},chains=new Map(),now=Date.now(),source=readFileSync(new URL('../tools/creator-profile-helper/scan-history.js',import.meta.url),'utf8');
+const context=vm.createContext({Date:{now:()=>now},IteaProfileCard:{profile:url=>/^https:\/\/www\.tiktok\.com\/@[\w.]+$/.test(url)?{url}:null},navigator:{locks:{request:(name,fn)=>{const next=(chains.get(name)||Promise.resolve()).then(fn);chains.set(name,next.catch(()=>{}));return next;}}},chrome:{storage:{local:{get:async name=>({[name]:structuredClone(store[name])}),set:async values=>Object.assign(store,structuredClone(values))}}}});
+vm.runInContext(source,context);const api=context.IteaHistory;
+await api.remember('A','https://www.tiktok.com/@alice','skipped');await api.remember('A','https://www.tiktok.com/@bob','collected');await api.remember('A','https://www.tiktok.com/@failed','error');await api.remember('B','https://www.tiktok.com/@other','collected');await api.remember('A','https://evil.test/profile','collected');
+assert.deepEqual(Array.from(await api.recent('A')),['https://www.tiktok.com/@alice','https://www.tiktok.com/@bob']);assert.equal((await api.recent('B')).length,1);
+await api.remember('A','https://www.tiktok.com/@alice','skipped');assert.equal((await api.recent('A')).length,2);store[api.KEY].push({scope:'A',url:'https://www.tiktok.com/@expired',status:'skipped',at:now-8*86400000});assert.equal((await api.recent('A')).length,2);
+store[api.KEY]=Array.from({length:3000},(_,i)=>({scope:'A',url:'https://www.tiktok.com/@sample'+i,status:'skipped',at:now}));await api.remember('A','https://www.tiktok.com/@new','collected');assert.equal(store[api.KEY].length,3000);assert.equal(store[api.KEY].at(-1).url,'https://www.tiktok.com/@new');
+console.log('PASS scan history: seven-day scoped cache, no-email included, errors excluded, duplicate replacement and bounded local storage.');
