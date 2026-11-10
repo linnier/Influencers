@@ -15,8 +15,8 @@ function render(s){
  $('setup').querySelectorAll('input,select,textarea').forEach(el=>el.disabled=busy);
  const tbody=$('results');tbody.replaceChildren();
  for(const r of s.rows){const tr=document.createElement('tr'),check=document.createElement('input');check.type='checkbox';check.checked=selected.has(r.url);check.setAttribute('aria-label','选择 '+r.handle);check.onchange=()=>{check.checked?selected.add(r.url):selected.delete(r.url);render(s)};const td=document.createElement('td');td.append(check);tr.append(td);
-  const owner=document.createElement('td');owner.textContent=r.name;const sub=document.createElement('small');sub.textContent=r.platform+' @'+r.handle;owner.append(sub);tr.append(owner);
-  for(const v of [r.email,r.fans==null?(r.fansDisplay?r.fansDisplay+'（展示值）':'未获取'):r.fans.toLocaleString('zh-CN')]){const cell=document.createElement('td');cell.textContent=v;tr.append(cell)}
+  const owner=document.createElement('td');owner.textContent=r.name;const sub=document.createElement('small');sub.textContent=r.platform+' @'+r.handle+(r.rangeStatus==='outside'?' · 范围外，仍保留':r.rangeStatus==='unknown'?' · 粉丝待核实':'');owner.append(sub);tr.append(owner);
+  for(const v of [r.email,r.fans==null?(r.fansApprox!=null?'约 '+r.fansApprox.toLocaleString('zh-CN')+'（'+r.fansDisplay+'）':r.fansDisplay?r.fansDisplay+'（展示值）':'未获取'):String(r.fans)]){const cell=document.createElement('td');cell.textContent=v;tr.append(cell)}
   const source=document.createElement('td'),a=document.createElement('a');a.href=r.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent='查看公开主页 ↗';source.append(a);tr.append(source);tbody.append(tr);
  }
  if(!s.rows.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=5;td.className='empty';td.textContent='有公开邮箱的达人会出现在这里。';tr.append(td);tbody.append(tr)}
@@ -30,7 +30,7 @@ async function managedTab(id,url){
  if(id){let tab;try{tab=await chrome.tabs.get(id)}catch{}if(tab){if(tab.url!==url)await chrome.tabs.update(id,{url,active:true});await ready(id);return id}}
  const tab=await chrome.tabs.create({url,active:true});await ready(tab.id);return tab.id;
 }
-async function inject(id){await chrome.scripting.executeScript({target:{tabId:id},files:['profile-card.js','scan-page.js']})}
+async function inject(id){await chrome.scripting.executeScript({target:{tabId:id},files:['follower-count.js','profile-card.js','scan-page.js']})}
 async function readProfile(id){let last=null,stable=0;
  for(let n=0;n<20;n++){await checkCancelled();await inject(id);const response=await chrome.scripting.executeScript({target:{tabId:id},func:()=>{const reason=IteaScan.gate(document);return reason?{status:'blocked',reason}:IteaProfileCard.read(document)}});const data=response[0]?.result;
   if(data?.status==='blocked')return data;if(data?.status==='collected')return data;
@@ -38,7 +38,7 @@ async function readProfile(id){let last=null,stable=0;
   last=data;await sleep(1000);
  }return last?.status==='error'?last:{status:'error',reason:'资料卡未能稳定加载，不能判断为无邮箱。请检查工作标签页。'};
 }
-const io={save,
+const io={save,onRecord:async record=>{const result=await IteaSync.keep(record);await syncStatus();if(result.error){notice='采集继续，结果已保存在本机；系统待同步：'+result.error;render(runner.state)}},
  searchTab:async(id,url)=>{if(id){try{await chrome.tabs.get(id);return id}catch{}}return managedTab(null,url)},
  profileTab:managedTab,
  scan:async id=>{let last;for(let n=0;n<15;n++){await checkCancelled();await inject(id);const r=await chrome.scripting.executeScript({target:{tabId:id},func:p=>IteaScan.scan(document,p),args:[runner.state.config.platform]});last=r[0]?.result;if(last?.blocked||last?.urls?.length||last?.posts?.length)return last;await sleep(1000)}return last||{error:true,reason:'无法读取搜索页面'};},
@@ -76,3 +76,12 @@ chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&changes
 (async()=>{const stored=(await chrome.storage.local.get(KEY))[KEY];const state=stored?.version===1?stored:IteaBatch.newState({mode:'search',platform:'TikTok',limit:10});if(['discovering','resolving','collecting'].includes(state.phase)){state.phase='paused';state.reason='任务页已重新打开。点击“继续任务”从上次进度继续。'}runner=new IteaBatch.Runner(state,io);for(const r of state.rows)selected.add(r.url);if(state.config.keyword)$('keyword').value=state.config.keyword;if(state.config.platform)$('platform').value=state.config.platform;$('limit').value=String(state.config.limit||10);$('minFans').value=state.config.minFans??'';$('maxFans').value=state.config.maxFans??'';$('urls').value=(state.config.urls||[]).join('\n');const radio=document.querySelector('[name=mode][value="'+(state.config.mode==='links'?'links':'search')+'"]');if(radio)radio.checked=true;mode();render(state)})().catch(e=>{$('status').textContent='读取本机任务失败：'+e.message});
 
 $('diagnostic').onclick=async()=>{const value=runner?.state.diagnostic;if(!value)return;const text=JSON.stringify(value,null,2);try{await navigator.clipboard.writeText(text);notice='页面布局诊断已复制，可粘贴反馈。只包含公开账号、帖子网址和布局尺寸，不含 Cookie、密码或私信。'}catch{$('copyFallback').hidden=false;$('copyFallback').open=true;$('json').value=text;$('json').select();notice='请手动复制下方已选中的页面诊断。'}render(runner.state)};
+
+async function syncStatus(){const [config,rows]=await Promise.all([IteaSync.connection(),IteaSync.archive()]);$('syncStatus').textContent=(config?.enabled?'已连接 '+config.username+' · ':'未连接系统 · ')+'本机 '+rows.length+' 位，系统已保存 '+rows.filter(r=>r.savedAt).length+' 位，待同步 '+rows.filter(r=>!r.savedAt).length+' 位。';$('archiveRows').replaceChildren();for(const item of rows.slice().reverse()){const tr=document.createElement('tr');for(const value of [item.record.name,item.record.email,item.record.fans??(item.record.fansDisplay?'约 '+item.record.fansDisplay:'未获取'),item.savedAt?'已保存到系统':item.error||'已存本机，待同步']){const td=document.createElement('td');td.textContent=String(value);tr.append(td)}$('archiveRows').append(tr)}}
+$('connect').onclick=async()=>{try{const result=await IteaSync.connect();notice=result.result.error||'已连接，今后读到邮箱自动保存到系统达人发现。';await syncStatus();render(runner.state)}catch(e){$('syncStatus').textContent=e.message}};
+$('retrySync').onclick=async()=>{try{const r=await IteaSync.flush();await syncStatus();$('status').textContent=r.error||r.reason||('已同步 '+r.saved+' 位，待同步 '+r.pending+' 位。')}catch(e){$('syncStatus').textContent=e.message}};
+$('disconnect').onclick=async()=>{await IteaSync.disconnect();await syncStatus()};
+$('backup').onclick=async()=>{const rows=await IteaSync.archive(),url=URL.createObjectURL(new Blob([JSON.stringify(rows.map(r=>r.record),null,2)],{type:'application/json'})),a=document.createElement('a');a.href=url;a.download='itea-local-leads.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+void syncStatus();
+
+chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&(changes[IteaSync.ARCHIVE]||changes[IteaSync.CONNECTION]))void syncStatus()});

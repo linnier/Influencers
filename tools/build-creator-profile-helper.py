@@ -5,7 +5,7 @@ root = Path(__file__).resolve().parent.parent
 source = root / 'tools/creator-profile-helper'
 target = root / 'itea-creator-hub/public/discovery-helper.zip'
 with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
-    for name in ['README.txt', 'manifest.json', 'popup.css', 'popup.html', 'popup.js', 'profile-card.js', 'wordmark.png', 'batch.html', 'batch.css', 'batch.js', 'batch-core.js', 'scan-page.js']:
+    for name in ['README.txt', 'manifest.json', 'popup.css', 'popup.html', 'popup.js', 'profile-card.js', 'wordmark.png', 'batch.html', 'batch.css', 'batch.js', 'batch-core.js', 'scan-page.js', 'follower-count.js', 'site-sync.js']:
         path = source / name
         if path.is_file():
             item = zipfile.ZipInfo(path.name, date_time=(2026, 11, 9, 0, 0, 0))

@@ -42,14 +42,16 @@ class Runner{
    if(data.status==='blocked'||data.status==='error'){await this.pause(data.reason||'主页暂时无法读取。检查工作标签页后可继续，或跳过本位。');return;}
    if(data.status==='collected'){
     if(data.record?.url!==url){await this.pause('工作页账号与任务不一致，已暂停，避免采集到其他达人。');return;}
-    const r=data.record,min=s.config.minFans,max=s.config.maxFans;
-    if((min!=null||max!=null)&&(r.fans==null||(min!=null&&r.fans<min)||(max!=null&&r.fans>max))){s.outcomes.push({url,status:'filtered',reason:r.fans==null?'精确粉丝数未获取，未纳入数值筛选':'不在粉丝数范围内'});}
-    else{if(!s.rows.some(x=>x.url===url))s.rows.push(r);s.outcomes.push({url,status:'collected',reason:'已保留公开邮箱'});}
-   }else if(data.status==='skipped'){if(data.url!==url){await this.pause('工作页账号与任务不一致，无法判断为无邮箱。');return;}s.outcomes.push({url,status:'skipped',reason:data.reason});}
+    const r=data.record,min=s.config.minFans,max=s.config.maxFans;const estimate=root.IteaFollowers.parse(r.fansDisplay),value=r.fans??(estimate?.approx?estimate.value:null);
+    r.rangeStatus=min==null&&max==null?'match':value==null?'unknown':((min!=null&&value<min)||(max!=null&&value>max))?'outside':'match';
+    if(!s.rows.some(x=>x.url===url))s.rows.push(r);
+    s.outcomes.push({url,status:r.rangeStatus==='match'?'collected':'filtered',reason:r.rangeStatus==='unknown'?'已保留邮箱；粉丝数待核实':r.rangeStatus==='outside'?'已保留邮箱；粉丝数不在筛选范围内':'已保留公开邮箱'});
+    await this.save();if(this.io.onRecord)await this.io.onRecord(r);
+   }else if(data.status==='skipped'){if(data.url!==url){await this.pause('工作页账号与任务不一致，无法判断为无邮箱。');return;}s.outcomes.push({url,status:'skipped',reason:data.reason+(data.fansDisplay?' 粉丝数：'+(data.fansApprox!=null?'约 ':'')+data.fansDisplay:'')});}
    else{await this.pause('未识别的读取结果，已暂停。');return;}
    s.cursor++;await this.save();if(s.cursor<s.candidates.length)await this.io.delay();
   }
-  s.phase='done';s.reason='本次任务已完成。勾选结果后可统一导入系统。';await this.save();
+  s.phase='done';s.reason='本次任务已完成。邮箱线索已保存在本机；连接系统后自动保存到达人发现。';await this.save();
  }catch(e){if(!this.cancelled)await this.pause('任务已暂停：'+String(e.message||e).slice(0,240));}finally{this.active=false;}}
  async skip(){if(this.active)throw Error('请等待任务暂停后操作');const s=this.state;if(s.stage==='authors'){if(s.postCursor<s.posts.length){s.outcomes.push({url:s.posts[s.postCursor],status:'failed',reason:'用户跳过无法确认作者的帖子'});s.postCursor++;await this.save();}return;}if(s.stage!=='collection')throw Error('当前还在搜索阶段');if(s.cursor<s.candidates.length){s.outcomes.push({url:s.candidates[s.cursor],status:'failed',reason:'用户跳过未能读取的主页'});s.cursor++;await this.save();}}
 
