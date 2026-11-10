@@ -4,7 +4,7 @@ import {JSDOM} from 'jsdom';
 const base=new URL('../tools/creator-profile-helper/',import.meta.url);
 const source=name=>readFileSync(new URL(name,base),'utf8');
 const dom=new JSDOM('',{url:'https://www.tiktok.com/search/user?q=food',runScripts:'dangerously'});
-for(const f of ['profile-card.js','batch-core.js'])dom.window.eval(source(f));
+for(const f of ['profile-card.js','scan-page.js','batch-core.js'])dom.window.eval(source(f));
 const api=dom.window.IteaBatch;
 assert.equal(api.searchUrl('TikTok','Singapore food'),'https://www.tiktok.com/search/user?q=Singapore%20food');
 assert.equal(api.searchUrl('Instagram','tea & cake'),'https://www.instagram.com/explore/search/keyword/?q=tea%20%26%20cake');
@@ -39,6 +39,22 @@ try{
  assert.equal(scan('<main>Login</main>','https://www.tiktok.com/login').blocked,true);
  assert.equal(scan('<main><a href="/@alice">Alice</a></main>','https://www.tiktok.com/@alice').error,true);
  r=scan('<main><a href="/alice/">Alice</a><a href="/p/abc/">Post</a><a href="/explore/">Explore</a><footer><a href="/other/">Other</a></footer></main>','https://www.instagram.com/explore/search/keyword/?q=food','Instagram');assert.equal(r.urls.length,1);assert.equal(r.urls[0],'https://www.instagram.com/alice/');
- const manifest=JSON.parse(source('manifest.json'));assert.equal(manifest.version,'1.1.0');assert.deepEqual(manifest.permissions,['activeTab','scripting','clipboardWrite','storage']);assert.equal(manifest.host_permissions,undefined);assert.equal(manifest.background,undefined);assert.deepEqual(manifest.optional_host_permissions,['https://www.instagram.com/*','https://www.tiktok.com/*']);
+ // Instagram search post grids must become a separate, deduplicated author queue.
+ const grid='<main><a href="/p/AAA/?hl=en"><img alt="food"></a><a href="/p/AAA/">duplicate</a><a href="/reel/BBB/">video</a><a hidden href="/p/HIDDEN/">hidden</a><a href="https://evil.test/p/BAD/">external</a></main>';
+ const gridResult=scan(grid,'https://www.instagram.com/explore/search/keyword/?q=%23foodsg','Instagram');assert.equal(gridResult.urls.length,0);assert.equal(gridResult.posts.length,2);assert.equal(gridResult.posts[0],'https://www.instagram.com/p/AAA/');
+ function author(html,href='https://www.instagram.com/p/AAA/',expected='https://www.instagram.com/p/AAA/'){
+  const d=new JSDOM(html,{url:href,runScripts:'dangerously'});try{d.window.eval(source('profile-card.js'));d.window.eval(source('scan-page.js'));return d.window.IteaScan.author(d.window.document,expected)}finally{d.window.close()}
+ }
+ const postHeader='<main><article><header><a href="/alice/"><img alt="avatar"></a><h2><a href="/alice/">alice</a></h2></header><ul><li><header><a href="/commenter/">commenter</a></header></li></ul></article></main>';
+ assert.equal(author(postHeader).url,'https://www.instagram.com/alice/');
+ assert.equal(author(postHeader.replace('<header><a href="/alice/"><img alt="avatar"></a><h2><a href="/alice/">alice</a></h2></header>','')).status,'error','comment-only header is not the author');
+ assert.equal(author('<main><article><div><a href="/alice/"><img alt="avatar"></a><h2><a href="/alice/">alice</a></h2></div><ul><li><h2><a href="/commenter/">commenter</a></h2></li></ul></article></main>').url,'https://www.instagram.com/alice/');
+ assert.equal(author('<main><article><h2><a href="/mentioned/">mentioned</a></h2></article></main>').status,'error','unverified mention is not author');
+ assert.equal(author(postHeader,'https://www.instagram.com/p/OTHER/').status,'error');
+ assert.equal(author(postHeader+'<div role="dialog">Log in</div>').status,'blocked');
+ t=task({config:{platform:'Instagram',limit:3},scan:()=>({urls:[],posts:['https://www.instagram.com/p/AAA/','https://www.instagram.com/p/AAA/','https://www.instagram.com/reel/BBB/']})});
+ t.io.author=async(_,entry)=>({status:'found',url:'https://www.instagram.com/alice/',postUrl:entry});t.io.read=async()=>({status:'collected',record:{url:'https://www.instagram.com/alice/',email:'alice@creator.test',fans:1200}});await t.runner.run();assert.equal(t.state.phase,'done');assert.equal(t.state.posts.length,2);assert.equal(t.state.candidates.length,1);assert.equal(t.state.rows.length,1);assert.equal(t.state.outcomes.filter(x=>x.status==='author').length,2);
+ t=task({config:{platform:'Instagram'},scan:()=>({posts:['https://www.instagram.com/p/AAA/']})});t.io.author=async()=>({status:'blocked',reason:'验证码'});await t.runner.run();assert.equal(t.state.phase,'paused');assert.equal(t.state.stage,'authors');assert.equal(t.state.postCursor,0);assert.equal(t.state.outcomes.length,0);await t.runner.skip();assert.equal(t.state.postCursor,1);assert.equal(t.state.outcomes[0].status,'failed');
+ const manifest=JSON.parse(source('manifest.json'));assert.equal(manifest.version,'1.1.1');assert.deepEqual(manifest.permissions,['activeTab','scripting','clipboardWrite','storage']);assert.equal(manifest.host_permissions,undefined);assert.equal(manifest.background,undefined);assert.deepEqual(manifest.optional_host_permissions,['https://www.instagram.com/*','https://www.tiktok.com/*']);
  console.log('PASS batch helper: keyword search queue, dedup, bounded scans, pause/resume, captcha/login, errors distinct from no-email, optional links, exact follower filters, URL identity, scoped DOM and optional platform permissions.');
 }finally{dom.window.close()}

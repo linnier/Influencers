@@ -3,15 +3,15 @@ const $=id=>document.getElementById(id),KEY='itea.discovery.batch.v1',selected=n
 let runner=null,notice='',busy=false,locked=false;
 const origins={Instagram:['https://www.instagram.com/*'],TikTok:['https://www.tiktok.com/*']};
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
-const labels={idle:'尚未开始',discovering:'正在寻找达人',collecting:'正在读取资料卡',paused:'任务已暂停',done:'采集完成'};
+const labels={idle:'尚未开始',discovering:'正在寻找达人',resolving:'正在识别帖子作者',collecting:'正在读取资料卡',paused:'任务已暂停',done:'采集完成'};
 function render(s){
  document.body.dataset.phase=s.phase;document.title=(labels[s.phase]||'自动发现达人')+' · itea';
- $('phase').textContent=labels[s.phase]||s.phase;$('progress').textContent=s.stage==='discovery'?'搜索 '+s.searchRound+' / 6 轮':s.cursor+' / '+s.candidates.length+' 位';
- $('bar').max=s.stage==='discovery'?6:Math.max(1,s.candidates.length);$('bar').value=s.stage==='discovery'?s.searchRound:s.cursor;
- $('status').textContent=notice||s.reason||(s.phase==='collecting'?'正在读取 '+(s.candidates[s.cursor]||''):'正在平台搜索结果中寻找达人…');
+ $('phase').textContent=labels[s.phase]||s.phase;$('progress').textContent=s.stage==='discovery'?'搜索 '+s.searchRound+' / 6 轮':s.stage==='authors'?'帖子 '+s.postCursor+' / '+(s.posts||[]).length+' 篇':s.cursor+' / '+s.candidates.length+' 位';
+ $('bar').max=s.stage==='discovery'?6:s.stage==='authors'?Math.max(1,(s.posts||[]).length):Math.max(1,s.candidates.length);$('bar').value=s.stage==='discovery'?s.searchRound:s.stage==='authors'?(s.postCursor||0):s.cursor;
+ $('status').textContent=notice||s.reason||(s.phase==='resolving'?'正在打开帖子并核对顶部作者 '+(s.posts[s.postCursor]||''):s.phase==='collecting'?'正在读取 '+(s.candidates[s.cursor]||''):'正在平台搜索结果中寻找达人…');
  $('found').textContent=s.candidates.length;$('kept').textContent=s.rows.length;$('total').textContent=s.rows.length;
  for(const [id,type] of [['noEmail','skipped'],['filtered','filtered'],['failed','failed']])$(id).textContent=s.outcomes.filter(x=>x.status===type).length;
- $('start').disabled=busy;$('pause').disabled=!busy||s.phase==='paused';$('resume').disabled=busy||s.phase!=='paused';$('skip').disabled=busy||s.phase!=='paused'||s.stage!=='collection'||s.cursor>=s.candidates.length;$('work').disabled=!(s.stage==='discovery'?s.searchTab:s.workTab);
+ $('start').disabled=busy;$('pause').disabled=!busy||s.phase==='paused';$('resume').disabled=busy||s.phase!=='paused';$('skip').disabled=busy||s.phase!=='paused'||!['collection','authors'].includes(s.stage)||(s.stage==='authors'?s.postCursor>=s.posts.length:s.cursor>=s.candidates.length);$('skip').textContent=s.stage==='authors'?'跳过当前帖子':'跳过当前达人';$('work').disabled=!(s.stage==='discovery'?s.searchTab:s.workTab);
  $('setup').querySelectorAll('input,select,textarea').forEach(el=>el.disabled=busy);
  const tbody=$('results');tbody.replaceChildren();
  for(const r of s.rows){const tr=document.createElement('tr'),check=document.createElement('input');check.type='checkbox';check.checked=selected.has(r.url);check.setAttribute('aria-label','选择 '+r.handle);check.onchange=()=>{check.checked?selected.add(r.url):selected.delete(r.url);render(s)};const td=document.createElement('td');td.append(check);tr.append(td);
@@ -41,8 +41,9 @@ async function readProfile(id){let last=null,stable=0;
 const io={save,
  searchTab:async(id,url)=>{if(id){try{await chrome.tabs.get(id);return id}catch{}}return managedTab(null,url)},
  profileTab:managedTab,
- scan:async id=>{let last;for(let n=0;n<15;n++){await checkCancelled();await inject(id);const r=await chrome.scripting.executeScript({target:{tabId:id},func:p=>IteaScan.scan(document,p),args:[runner.state.config.platform]});last=r[0]?.result;if(last?.blocked||last?.urls?.length)return last;await sleep(1000)}return last||{error:true,reason:'无法读取搜索页面'};},
+ scan:async id=>{let last;for(let n=0;n<15;n++){await checkCancelled();await inject(id);const r=await chrome.scripting.executeScript({target:{tabId:id},func:p=>IteaScan.scan(document,p),args:[runner.state.config.platform]});last=r[0]?.result;if(last?.blocked||last?.urls?.length||last?.posts?.length)return last;await sleep(1000)}return last||{error:true,reason:'无法读取搜索页面'};},
  scroll:async id=>{await chrome.scripting.executeScript({target:{tabId:id},func:()=>{const main=document.querySelector('main,[role="main"]');if(main){main.scrollTop+=Math.max(600,innerHeight*.8);for(const node of main.querySelectorAll("div,section")){if(node.clientHeight>200&&node.scrollHeight>node.clientHeight+50&&/auto|scroll/.test(getComputedStyle(node).overflowY)){node.scrollTop+=Math.max(600,node.clientHeight*.8);break}}}window.scrollBy(0,Math.max(600,innerHeight*.8))}});await sleep(2000)},
+ author:async(id,url)=>{let last;for(let n=0;n<20;n++){await checkCancelled();await inject(id);const r=await chrome.scripting.executeScript({target:{tabId:id},func:expected=>IteaScan.author(document,expected),args:[url]});last=r[0]?.result;if(last?.status==='blocked'||last?.status==='found')return last;await sleep(1000)}return last||{status:'error',reason:'帖子作者读取失败'};},
  read:readProfile,delay:async()=>{for(let n=0;n<4;n++){await checkCancelled();await sleep(1000)}}
 };
 async function execute(newTask=false){if(busy||!runner)return;busy=true;notice='';render(runner.state);
@@ -72,4 +73,4 @@ $('copy').onclick=async()=>{const text=JSON.stringify(chosen(),null,2);try{await
 $('download').onclick=()=>{const blob=new Blob([JSON.stringify(chosen(),null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='itea-creator-results.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
 $('system').onclick=()=>void chrome.tabs.create({url:'https://47.86.198.65/creators/'});
 chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&changes[KEY]&&!locked&&!busy){const s=changes[KEY].newValue;if(s)render(s)}});
-(async()=>{const stored=(await chrome.storage.local.get(KEY))[KEY];const state=stored?.version===1?stored:IteaBatch.newState({mode:'search',platform:'TikTok',limit:10});if(['discovering','collecting'].includes(state.phase)){state.phase='paused';state.reason='任务页已重新打开。点击“继续任务”从上次进度继续。'}runner=new IteaBatch.Runner(state,io);for(const r of state.rows)selected.add(r.url);if(state.config.keyword)$('keyword').value=state.config.keyword;if(state.config.platform)$('platform').value=state.config.platform;render(state)})().catch(e=>{$('status').textContent='读取本机任务失败：'+e.message});
+(async()=>{const stored=(await chrome.storage.local.get(KEY))[KEY];const state=stored?.version===1?stored:IteaBatch.newState({mode:'search',platform:'TikTok',limit:10});if(['discovering','resolving','collecting'].includes(state.phase)){state.phase='paused';state.reason='任务页已重新打开。点击“继续任务”从上次进度继续。'}runner=new IteaBatch.Runner(state,io);for(const r of state.rows)selected.add(r.url);if(state.config.keyword)$('keyword').value=state.config.keyword;if(state.config.platform)$('platform').value=state.config.platform;$('limit').value=String(state.config.limit||10);$('minFans').value=state.config.minFans??'';$('maxFans').value=state.config.maxFans??'';$('urls').value=(state.config.urls||[]).join('\n');const radio=document.querySelector('[name=mode][value="'+(state.config.mode==='links'?'links':'search')+'"]');if(radio)radio.checked=true;mode();render(state)})().catch(e=>{$('status').textContent='读取本机任务失败：'+e.message});

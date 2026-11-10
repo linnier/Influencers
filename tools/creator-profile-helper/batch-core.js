@@ -2,9 +2,9 @@
 const LIMIT=30;
 function searchUrl(platform,keyword){const q=encodeURIComponent(String(keyword||'').trim());if(!q)throw Error('请填写搜索关键词');if(platform==='TikTok')return 'https://www.tiktok.com/search/user?q='+q;if(platform==='Instagram')return 'https://www.instagram.com/explore/search/keyword/?q='+q;throw Error('不支持的平台');}
 function links(raw){const valid=[],invalid=[];for(const s of String(raw||'').split(/[\s,，]+/).filter(Boolean)){const p=root.IteaProfileCard.profile(s);if(p){if(!valid.includes(p.url))valid.push(p.url)}else invalid.push(s)}return {valid:valid.slice(0,LIMIT),invalid,truncated:valid.length>LIMIT};}
-function newState(config){config={...config,limit:Math.max(1,Math.min(LIMIT,Number(config.limit)||10)),urls:(config.urls||[]).slice(0,LIMIT)};return {version:1,phase:'idle',stage:config.mode==='links'?'collection':'discovery',config,candidates:config.urls||[],cursor:0,rows:[],outcomes:[],searchRound:0,emptyRounds:0,searchTab:null,workTab:null,reason:''};}
+function newState(config){config={...config,limit:Math.max(1,Math.min(LIMIT,Number(config.limit)||10)),urls:(config.urls||[]).slice(0,LIMIT)};return {version:1,phase:'idle',stage:config.mode==='links'?'collection':'discovery',config,candidates:config.urls||[],cursor:0,rows:[],outcomes:[],searchRound:0,emptyRounds:0,posts:[],postCursor:0,searchTab:null,workTab:null,reason:''};}
 class Runner{
- constructor(state,io){this.state=state;this.io=io;this.active=false;this.cancelled=false;}
+ constructor(state,io){state.posts=state.posts||[];state.postCursor=state.postCursor||0;this.state=state;this.io=io;this.active=false;this.cancelled=false;}
  async save(){await this.io.save(this.state);}
  async pause(reason='已暂停，可继续当前任务。'){this.cancelled=true;this.state.phase='paused';this.state.reason=reason;await this.save();}
  async run(){if(this.active)return;this.active=true;this.cancelled=false;const s=this.state;try{
@@ -12,14 +12,27 @@ class Runner{
   if(s.stage==='discovery'){
    s.phase='discovering';await this.save();
    s.searchTab=await this.io.searchTab(s.searchTab,searchUrl(s.config.platform,s.config.keyword));if(this.cancelled)return;await this.save();
-   while(s.searchRound<6&&s.candidates.length<s.config.limit){
+   while(s.searchRound<6&&s.candidates.length+s.posts.length<s.config.limit){
     const result=await this.io.scan(s.searchTab,s.config.platform);if(this.cancelled)return;
     if(result.blocked||result.error){await this.pause(result.reason||'搜索页暂时无法读取，请检查工作标签页后继续。');return;}
-    const before=s.candidates.length;for(const url of result.urls||[]){const p=root.IteaProfileCard.profile(url);if(p&&p.platform===s.config.platform&&!s.candidates.includes(p.url)&&s.candidates.length<s.config.limit)s.candidates.push(p.url);}
-    s.emptyRounds=s.candidates.length===before?(s.emptyRounds||0)+1:0;s.searchRound++;await this.save();if(s.candidates.length>=s.config.limit||result.end||s.emptyRounds>=2)break;
+    const before=s.candidates.length+s.posts.length;for(const url of result.urls||[]){const p=root.IteaProfileCard.profile(url);if(p&&p.platform===s.config.platform&&!s.candidates.includes(p.url)&&s.candidates.length<s.config.limit)s.candidates.push(p.url);}
+    for(const raw of result.posts||[]){const url=root.IteaScan.post(raw);if(s.config.platform==='Instagram'&&url&&!s.posts.includes(url)&&s.posts.length+s.candidates.length<s.config.limit)s.posts.push(url);}
+    s.emptyRounds=s.candidates.length+s.posts.length===before?(s.emptyRounds||0)+1:0;s.searchRound++;await this.save();if(s.candidates.length+s.posts.length>=s.config.limit||result.end||s.emptyRounds>=2)break;
     await this.io.scroll(s.searchTab);if(this.cancelled)return;
    }
-   if(!s.candidates.length){s.searchRound=0;await this.pause('没有识别到达人搜索结果。请打开工作标签页，确认搜索词和“用户/账号”结果是否正常；此平台搜索布局可能尚不兼容。');return;}
+   if(!s.candidates.length&&!s.posts.length){s.searchRound=0;await this.pause('没有识别到达人搜索结果。请打开工作标签页，确认搜索词和“用户/账号”结果是否正常；此平台搜索布局可能尚不兼容。');return;}
+   s.stage=s.posts.length?'authors':'collection';await this.save();
+  }
+  if(s.stage==='authors'){
+   s.phase='resolving';await this.save();
+   while(s.postCursor<s.posts.length&&s.candidates.length<s.config.limit){
+    if(this.cancelled)return;const url=s.posts[s.postCursor];s.workTab=await this.io.profileTab(s.workTab,url);if(this.cancelled)return;await this.save();
+    const data=await this.io.author(s.workTab,url);if(this.cancelled)return;
+    const owner=data.status==='found'?root.IteaProfileCard.profile(data.url):null;
+    if(!owner||owner.platform!=='Instagram'||data.postUrl!==url){await this.pause(data.reason||'未能可靠识别当前帖子的作者，已暂停。');return;}
+    const duplicate=s.candidates.includes(owner.url);if(!duplicate)s.candidates.push(owner.url);s.outcomes.push({url,status:'author',reason:(duplicate?'重复作者，已合并：':'识别作者：')+'@'+owner.handle,authorUrl:owner.url});s.postCursor++;await this.save();
+    if(s.postCursor<s.posts.length&&s.candidates.length<s.config.limit)await this.io.delay();
+   }
    s.stage='collection';await this.save();
   }
   s.phase='collecting';await this.save();
@@ -38,7 +51,8 @@ class Runner{
   }
   s.phase='done';s.reason='本次任务已完成。勾选结果后可统一导入系统。';await this.save();
  }catch(e){if(!this.cancelled)await this.pause('任务已暂停：'+String(e.message||e).slice(0,240));}finally{this.active=false;}}
- async skip(){if(this.active)throw Error('请等待任务暂停后操作');if(this.state.stage!=='collection')throw Error('当前还在搜索阶段');const s=this.state;if(s.cursor<s.candidates.length){s.outcomes.push({url:s.candidates[s.cursor],status:'failed',reason:'用户跳过未能读取的主页'});s.cursor++;await this.save();}}
+ async skip(){if(this.active)throw Error('请等待任务暂停后操作');const s=this.state;if(s.stage==='authors'){if(s.postCursor<s.posts.length){s.outcomes.push({url:s.posts[s.postCursor],status:'failed',reason:'用户跳过无法确认作者的帖子'});s.postCursor++;await this.save();}return;}if(s.stage!=='collection')throw Error('当前还在搜索阶段');if(s.cursor<s.candidates.length){s.outcomes.push({url:s.candidates[s.cursor],status:'failed',reason:'用户跳过未能读取的主页'});s.cursor++;await this.save();}}
+
 }
 root.IteaBatch={LIMIT,searchUrl,links,newState,Runner};
 })(globalThis);
