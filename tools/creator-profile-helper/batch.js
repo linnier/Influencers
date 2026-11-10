@@ -9,13 +9,13 @@ function render(s){
  $('phase').textContent=labels[s.phase]||s.phase;$('progress').textContent=s.stage==='discovery'?'搜索 '+s.searchRound+' / 6 轮':s.stage==='authors'?'帖子 '+s.postCursor+' / '+(s.posts||[]).length+' 篇':s.cursor+' / '+s.candidates.length+' 位';
  $('bar').max=s.stage==='discovery'?6:s.stage==='authors'?Math.max(1,(s.posts||[]).length):Math.max(1,s.candidates.length);$('bar').value=s.stage==='discovery'?s.searchRound:s.stage==='authors'?(s.postCursor||0):s.cursor;
  $('status').textContent=notice||s.reason||(s.phase==='resolving'?'正在打开帖子并核对顶部作者 '+(s.posts[s.postCursor]||''):s.phase==='collecting'?'正在读取 '+(s.candidates[s.cursor]||''):'正在平台搜索结果中寻找达人…');
- $('diagnostic').disabled=!s.diagnostic;$('found').textContent=s.candidates.length;$('kept').textContent=s.rows.length;$('total').textContent=s.rows.length;
+ $('repairFans').disabled=busy||!s.rows.some(r=>r.fans==null);$('diagnostic').disabled=!s.diagnostic;$('found').textContent=s.candidates.length;$('kept').textContent=s.rows.length;$('total').textContent=s.rows.length;
  for(const [id,type] of [['noEmail','skipped'],['filtered','filtered'],['failed','failed']])$(id).textContent=s.outcomes.filter(x=>x.status===type).length;
  $('start').disabled=busy;$('pause').disabled=!busy||s.phase==='paused';$('resume').disabled=busy||s.phase!=='paused';$('skip').disabled=busy||s.phase!=='paused'||!['collection','authors'].includes(s.stage)||(s.stage==='authors'?s.postCursor>=s.posts.length:s.cursor>=s.candidates.length);$('skip').textContent=s.stage==='authors'?'跳过当前帖子':'跳过当前达人';$('work').disabled=!(s.stage==='discovery'?s.searchTab:s.workTab);
  $('setup').querySelectorAll('input,select,textarea').forEach(el=>el.disabled=busy);
  const tbody=$('results');tbody.replaceChildren();
  for(const r of s.rows){const tr=document.createElement('tr'),check=document.createElement('input');check.type='checkbox';check.checked=selected.has(r.url);check.setAttribute('aria-label','选择 '+r.handle);check.onchange=()=>{check.checked?selected.add(r.url):selected.delete(r.url);render(s)};const td=document.createElement('td');td.append(check);tr.append(td);
-  const owner=document.createElement('td');owner.textContent=r.name;const sub=document.createElement('small');sub.textContent=r.platform+' @'+r.handle+(r.rangeStatus==='outside'?' · 范围外，仍保留':r.rangeStatus==='unknown'?' · 粉丝待核实':'');owner.append(sub);tr.append(owner);
+  const owner=document.createElement('td');owner.textContent=r.name;const sub=document.createElement('small');sub.textContent=r.platform+' @'+r.handle+(r.emailNeedsReview?' · 邮箱待核对':'')+(r.rangeStatus==='outside'?' · 范围外，仍保留':r.rangeStatus==='unknown'?' · 粉丝待核实':'');owner.append(sub);tr.append(owner);
   for(const v of [r.email,r.fans==null?(r.fansApprox!=null?'约 '+r.fansApprox.toLocaleString('zh-CN')+'（'+r.fansDisplay+'）':r.fansDisplay?r.fansDisplay+'（展示值）':'未获取'):String(r.fans)]){const cell=document.createElement('td');cell.textContent=v;tr.append(cell)}
   const source=document.createElement('td'),a=document.createElement('a');a.href=r.url;a.target='_blank';a.rel='noopener noreferrer';a.textContent='查看公开主页 ↗';source.append(a);tr.append(source);tbody.append(tr);
  }
@@ -31,10 +31,10 @@ async function managedTab(id,url){
  const tab=await chrome.tabs.create({url,active:true});await ready(tab.id);return tab.id;
 }
 async function inject(id){await chrome.scripting.executeScript({target:{tabId:id},files:['follower-count.js','profile-card.js','scan-page.js']})}
-async function readProfile(id){let last=null,stable=0;
+async function readProfile(id){let last=null,stable=0,missingFans=0;
  for(let n=0;n<20;n++){await checkCancelled();await inject(id);const response=await chrome.scripting.executeScript({target:{tabId:id},func:()=>{const reason=IteaScan.gate(document);return reason?{status:'blocked',reason}:IteaProfileCard.read(document)}});const data=response[0]?.result;
-  if(data?.status==='blocked')return data;if(data?.status==='collected')return data;
-  if(data?.status==='skipped'){stable++;if(stable>=3)return data}else stable=0;
+  if(data?.status==='blocked')return data;if(data?.status==='collected'){if(data.record.fans!=null)return data;missingFans++;if(missingFans>=5)return data;last=data;await sleep(1000);continue;}
+  if(data?.status==='skipped'){stable++;if(stable>=3&&(!runner?.state.config.repairFans||data.fans!=null||stable>=5))return data}else stable=0;
   last=data;await sleep(1000);
  }return last?.status==='error'?last:{status:'error',reason:'资料卡未能稳定加载，不能判断为无邮箱。请检查工作标签页。'};
 }
@@ -44,7 +44,7 @@ const io={save,onRecord:async record=>{const result=await IteaSync.keep(record);
  scan:async id=>{let last;for(let n=0;n<15;n++){await checkCancelled();await inject(id);const r=await chrome.scripting.executeScript({target:{tabId:id},func:p=>IteaScan.scan(document,p),args:[runner.state.config.platform]});last=r[0]?.result;if(last?.blocked||last?.urls?.length||last?.posts?.length)return last;await sleep(1000)}return last||{error:true,reason:'无法读取搜索页面'};},
  scroll:async id=>{await chrome.scripting.executeScript({target:{tabId:id},func:()=>{const main=document.querySelector('main,[role="main"]');if(main){main.scrollTop+=Math.max(600,innerHeight*.8);for(const node of main.querySelectorAll("div,section")){if(node.clientHeight>200&&node.scrollHeight>node.clientHeight+50&&/auto|scroll/.test(getComputedStyle(node).overflowY)){node.scrollTop+=Math.max(600,node.clientHeight*.8);break}}}window.scrollBy(0,Math.max(600,innerHeight*.8))}});await sleep(2000)},
  author:async(id,url)=>{let last;for(let n=0;n<20;n++){await checkCancelled();await inject(id);const r=await chrome.scripting.executeScript({target:{tabId:id},func:expected=>IteaScan.author(document,expected),args:[url]});last=r[0]?.result;if(last?.status==='blocked'||last?.status==='found')return last;await sleep(1000)}return last||{status:'error',reason:'帖子作者读取失败'};},
- read:readProfile,delay:async()=>{for(let n=0;n<4;n++){await checkCancelled();await sleep(1000)}}
+ read:async id=>{const data=await readProfile(id),previous=runner?.state.config.repairFans?runner.state.rows.find(r=>r.url===runner.state.candidates[runner.state.cursor]):null;if(previous&&data.status==='skipped'&&data.url===previous.url){if(data.fans!=null&&IteaProfileCard.emails(previous.cardText||'').some(email=>email.toLowerCase()===previous.email.toLowerCase()))return {status:'collected',record:{...previous,fans:data.fans,fansApprox:data.fansApprox,fansDisplay:data.fansDisplay,metricUpdatedAt:new Date().toISOString()}};if(!IteaProfileCard.emails(previous.cardText||'').some(email=>email.toLowerCase()===previous.email.toLowerCase())){previous.emailNeedsReview=true;if(data.fans!=null)Object.assign(previous,{fans:data.fans,fansApprox:data.fansApprox,fansDisplay:data.fansDisplay});}}return data;},delay:async()=>{for(let n=0;n<4;n++){await checkCancelled();await sleep(1000)}}
 };
 async function execute(newTask=false){if(busy||!runner)return;busy=true;notice='';render(runner.state);
  try{await navigator.locks.request(KEY,{ifAvailable:true},async lock=>{if(!lock){notice='另一个任务页正在采集，请先回到该页面暂停任务。';return}locked=true;try{if(!newTask){const latest=(await chrome.storage.local.get(KEY))[KEY];if(latest?.version===1)runner=new IteaBatch.Runner(latest,io)}await runner.run()}finally{locked=false}})}catch(e){notice=String(e.message||e)}finally{busy=false;render(runner.state)}}
@@ -85,3 +85,5 @@ $('backup').onclick=async()=>{const rows=await IteaSync.archive(),url=URL.create
 void syncStatus();
 
 chrome.storage.onChanged.addListener((changes,area)=>{if(area==='local'&&(changes[IteaSync.ARCHIVE]||changes[IteaSync.CONNECTION]))void syncStatus()});
+
+$('repairFans').onclick=async()=>{if(busy||!runner)return;try{const old=runner.state,targets=old.rows.filter(r=>r.fans==null).slice(0,30);if(!targets.length)return;const platforms=[...new Set(targets.map(r=>r.platform))],allowed=await chrome.permissions.request({origins:platforms.flatMap(p=>origins[p])});if(!allowed)throw Error('未授权主页读取，原结果已保留。');const state=IteaBatch.newState({...old.config,mode:'links',repairFans:true,urls:targets.map(r=>r.url)});state.rows=JSON.parse(JSON.stringify(old.rows));state.workTab=old.workTab;runner=new IteaBatch.Runner(state,io);await execute(true);}catch(e){$('status').textContent=e.message}};

@@ -44,7 +44,7 @@ class Runner{
     if(data.record?.url!==url){await this.pause('工作页账号与任务不一致，已暂停，避免采集到其他达人。');return;}
     const r=data.record,min=s.config.minFans,max=s.config.maxFans;const estimate=root.IteaFollowers.parse(r.fansDisplay),value=r.fans??(estimate?.approx?estimate.value:null);
     r.rangeStatus=min==null&&max==null?'match':value==null?'unknown':((min!=null&&value<min)||(max!=null&&value>max))?'outside':'match';
-    if(!s.rows.some(x=>x.url===url))s.rows.push(r);
+    const existing=s.rows.findIndex(x=>x.url===url);if(existing<0)s.rows.push(r);else s.rows[existing]={...s.rows[existing],...r};if(r.fans==null&&r.metricDiagnostic)s.diagnostic=r.metricDiagnostic;
     s.outcomes.push({url,status:r.rangeStatus==='match'?'collected':'filtered',reason:r.rangeStatus==='unknown'?'已保留邮箱；粉丝数待核实':r.rangeStatus==='outside'?'已保留邮箱；粉丝数不在筛选范围内':'已保留公开邮箱'});
     await this.save();if(this.io.onRecord)await this.io.onRecord(r);
    }else if(data.status==='skipped'){if(data.url!==url){await this.pause('工作页账号与任务不一致，无法判断为无邮箱。');return;}s.outcomes.push({url,status:'skipped',reason:data.reason+(data.fansDisplay?' 粉丝数：'+(data.fansApprox!=null?'约 ':'')+data.fansDisplay:'')});}
