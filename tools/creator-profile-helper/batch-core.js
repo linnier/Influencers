@@ -29,8 +29,8 @@ class Runner{
     if(this.cancelled)return;const url=s.posts[s.postCursor];s.workTab=await this.io.profileTab(s.workTab,url);if(this.cancelled)return;await this.save();
     const data=await this.io.author(s.workTab,url);if(this.cancelled)return;
     const owner=data.status==='found'?root.IteaProfileCard.profile(data.url):null;
-    if(!owner||owner.platform!=='Instagram'||data.postUrl!==url){await this.pause(data.reason||'未能可靠识别当前帖子的作者，已暂停。');return;}
-    const duplicate=s.candidates.includes(owner.url);if(!duplicate)s.candidates.push(owner.url);s.outcomes.push({url,status:'author',reason:(duplicate?'重复作者，已合并：':'识别作者：')+'@'+owner.handle,authorUrl:owner.url});s.postCursor++;await this.save();
+    if(!owner||owner.platform!=='Instagram'||data.postUrl!==url){s.diagnostic=data.diagnostic||null;await this.pause(data.reason||'未能可靠识别当前帖子的作者，已暂停。');return;}
+    s.diagnostic=null;const duplicate=s.candidates.includes(owner.url);if(!duplicate)s.candidates.push(owner.url);s.outcomes.push({url,status:'author',reason:(duplicate?'重复作者，已合并：':'识别作者：')+'@'+owner.handle,authorUrl:owner.url});s.postCursor++;await this.save();
     if(s.postCursor<s.posts.length&&s.candidates.length<s.config.limit)await this.io.delay();
    }
    s.stage='collection';await this.save();

@@ -20,6 +20,7 @@ result=read('<main><header><h2>alice</h2><p>Contact us <a href="mailto:alice%40c
 // TikTok layout changes: hidden stale SPA heading, visible generic heading,
 // split username text, and exact owner consistency; no whole-page bio fallback.
 const newerTT='<main><h1 data-e2e="user-title" hidden>previous</h1><section><h1><span>@alice</span><span>Follow</span></h1><strong data-e2e="followers-count">12500</strong><div data-e2e="user-bio">Public alice@creator.test</div></section></main>';
+assert.equal(read(newerTT.replace('<strong data-e2e="followers-count">','<h2 data-e2e="user-subtitle">Alice Tea</h2><strong data-e2e="followers-count">'),'https://www.tiktok.com/@alice').status,'collected','nickname-only subtitle must not block matching generic username heading');
 result=read(newerTT,'https://www.tiktok.com/@alice');assert.equal(result.status,'collected');assert.equal(result.record.email,'alice@creator.test');assert.equal(result.record.fans,12500);
 assert.equal(read(newerTT.replace('<h1><span>','<h1 data-e2e="user-title"><span>'),'https://www.tiktok.com/@alice').status,'collected');
 assert.equal(read(tt('previous@creator.test').replace('@alice','@previous').replace('</main>','<h2>alice</h2></main>'),'https://www.tiktok.com/@alice').status,'error','mismatched explicit owner must block fallback heading');
