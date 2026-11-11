@@ -2,7 +2,7 @@
 const LIMIT=300;
 function searchUrl(platform,keyword,searchType='content'){const q=encodeURIComponent(String(keyword||'').trim());if(!q)throw Error('请填写搜索关键词');if(platform==='TikTok')return 'https://www.tiktok.com/search'+(searchType==='accounts'?'/user':'')+'?q='+q;if(platform==='Instagram')return 'https://www.instagram.com/explore/search/keyword/?q='+q;throw Error('不支持的平台');}
 function links(raw){const valid=[],invalid=[];for(const s of String(raw||'').split(/[\s,，]+/).filter(Boolean)){const p=root.IteaProfileCard.profile(s);if(p){if(!valid.includes(p.url))valid.push(p.url)}else invalid.push(s)}return {valid:valid.slice(0,LIMIT),invalid,truncated:valid.length>LIMIT};}
-function config(value){const limit=Math.max(1,Math.min(LIMIT,Number(value.limit)||100));return {...value,searchType:value.searchType==='accounts'?'accounts':'content',limit,maxRounds:Math.min(120,Math.max(12,Math.ceil(limit/10)*4)),postLimit:Math.min(900,limit*3),paceMs:Number(value.paceMs)===2000?2000:800,urls:(value.urls||[]).slice(0,LIMIT)};}
+function config(value){const limit=Math.max(1,Math.min(LIMIT,Number(value.limit)||100));return {...value,searchType:value.searchType==='accounts'?'accounts':'content',limit,maxRounds:Math.min(120,Math.max(12,Math.ceil(limit/10)*4)),postLimit:Math.min(6000,Math.max(300,limit*20)),paceMs:Number(value.paceMs)===2000?2000:800,urls:(value.urls||[]).slice(0,LIMIT)};}
 function newState(value){return {version:1,phase:'idle',stage:value.mode==='links'?'collection':'discovery',config:config(value),candidates:(value.urls||[]).slice(0,LIMIT),cursor:0,rows:[],outcomes:[],searchRound:0,emptyRounds:0,posts:[],postCursor:0,cachedUrls:[],observedProfiles:[],searchTab:null,workTab:null,reason:'',activeItem:''};}
 class Runner{
  constructor(state,io){state.config=config(state.config);for(const key of ['posts','cachedUrls','observedProfiles'])state[key]=state[key]||[];state.postCursor=state.postCursor||0;this.state=state;this.io=io;this.active=false;this.cancelled=false;this.known=new Set(state.config.knownUrls||[]);}
@@ -25,15 +25,17 @@ class Runner{
    await this.save();if(this.io.onRecord)await this.io.onRecord(r);
   }else if(data.status==='skipped'){
    if(data.url!==url){await this.pause('工作页账号与任务不一致，无法判断为无邮箱。');return false;}
-   s.outcomes.push({url,status:'skipped',reason:data.reason+(data.fansDisplay?' 粉丝数：'+data.fansDisplay:'')});
+   s.outcomes.push({url,status:'skipped',fans:data.fans??null,fansDisplay:data.fansDisplay||'',reason:data.reason+(data.fansDisplay?' 粉丝数：'+data.fansDisplay:'')});
   }else{await this.pause('未识别的读取结果，已暂停。');return false;}
   if(this.io.remember)await this.io.remember(url,data.status);this.known.add(url);s.cursor++;s.activeItem='';await this.save();return !this.cancelled;
  }
  async run(){if(this.active)return;this.active=true;this.cancelled=false;const s=this.state;try{
   s.reason='';
+  if(s.phase==='shortfall'){s.stage='discovery';s.emptyRounds=0;s.searchRound=0;s.config.postLimit=Math.max(s.config.postLimit,s.posts.length+Math.min(6000,Math.max(300,s.config.limit*20)));}
+  while(true){
   if(s.stage==='discovery'){
    s.phase='discovering';s.activeItem='';await this.save();if(this.cancelled)return;
-   s.searchTab=await this.io.searchTab(s.searchTab,searchUrl(s.config.platform,s.config.keyword,s.config.searchType));if(this.cancelled)return;await this.save();
+   s.searchTab=await this.io.searchTab(s.searchTab,searchUrl(s.config.platform,String(s.config.keyword).split(/[;；\n]+/).map(x=>x.trim()).filter(Boolean)[s.searchIndex||0],s.config.searchType));if(this.cancelled)return;await this.save();
    while(s.searchRound<s.config.maxRounds&&s.candidates.length<s.config.limit&&s.posts.length<s.config.postLimit){
     if(this.cancelled)return;const result=await this.io.scan(s.searchTab,s.config.platform);if(this.cancelled)return;
     if(result.blocked||result.error){await this.pause(result.reason||'搜索页暂时无法读取，请检查工作标签页后继续。');return;}
@@ -41,10 +43,16 @@ class Runner{
     for(const raw of result.urls||[]){const a=root.IteaProfileCard.profile(raw);if(!a||a.platform!==s.config.platform)continue;if(!s.observedProfiles.includes(a.url))s.observedProfiles.push(a.url);if(this.knownURL(a.url)){this.cached(a.url);continue;}if(!s.candidates.includes(a.url)&&s.candidates.length<s.config.limit)s.candidates.push(a.url);}
     for(const raw of result.posts||[]){const url=root.IteaScan.post(raw);if(s.config.platform==='Instagram'&&url&&!s.posts.includes(url)&&s.posts.length<s.config.postLimit)s.posts.push(url);}
     s.emptyRounds=s.observedProfiles.length+s.posts.length===before?s.emptyRounds+1:0;s.searchRound++;await this.save();if(this.cancelled)return;
-    if(s.candidates.length>=s.config.limit||s.posts.length>=s.config.postLimit||result.end||s.emptyRounds>=4)break;
+    if(result.end)s.emptyRounds=8;
+    if(s.candidates.length>=s.config.limit||s.posts.length>=s.config.postLimit||result.end||s.emptyRounds>=8||s.posts.length-s.postCursor>=30||s.candidates.length-s.cursor>=30)break;
     await this.io.scroll(s.searchTab);if(this.cancelled)return;
    }
-   if(!s.candidates.length&&!s.posts.length){if(s.cachedUrls.length){s.phase='done';s.reason='本批账号近期已读取，已跳过 '+s.cachedUrls.length+' 位。可更换关键词，或取消“跳过最近已读主页”重新读取。';await this.save();return;}s.searchRound=0;await this.pause('没有识别到达人搜索结果。请打开工作标签页检查结果是否正常；此平台搜索布局可能尚不兼容。');return;}
+   if(!s.candidates.length&&!s.posts.length){
+    const keywords=String(s.config.keyword).split(/[;；\n]+/).map(x=>x.trim()).filter(Boolean);
+    if((s.searchIndex||0)+1<keywords.length){s.searchIndex=(s.searchIndex||0)+1;s.searchRound=0;s.emptyRounds=0;continue;}
+    if(s.cachedUrls.length){s.phase='shortfall';s.reason='当前来源只有近期已读账号，尚未收集到新主页。可继续加载或更换关键词。';await this.save();return;}
+    s.searchRound=0;await this.pause('没有识别到达人搜索结果。请打开工作标签页检查结果是否正常；此平台搜索布局可能尚不兼容。');return;
+   }
    s.stage=s.posts.length?'authors':'collection';await this.save();
   }
   if(s.stage==='authors'){
@@ -65,7 +73,14 @@ class Runner{
    s.stage='collection';await this.save();
   }
   while(s.cursor<s.candidates.length){if(!await this.consume())return;if(s.cursor<s.candidates.length)await this.io.delay();}
-  s.phase='done';s.activeItem='';s.reason='本次任务已完成。邮箱线索已保存在本机，连接系统后分批自动保存。'+(s.cachedUrls.length?' 已跳过近期读过的 '+s.cachedUrls.length+' 位。':'');await this.save();
+  if(s.config.mode!=='links'&&s.candidates.length<s.config.limit){
+   if(s.searchRound<s.config.maxRounds&&s.emptyRounds<8&&s.posts.length<s.config.postLimit){s.stage='discovery';await this.io.scroll(s.searchTab);continue;}
+   const keywords=String(s.config.keyword).split(/[;；\n]+/).map(x=>x.trim()).filter(Boolean);
+   if((s.searchIndex||0)+1<keywords.length&&s.posts.length<s.config.postLimit){s.searchIndex=(s.searchIndex||0)+1;s.searchRound=0;s.emptyRounds=0;s.stage='discovery';continue;}
+   s.phase='shortfall';s.activeItem='';s.reason='尚未达到主页目标：已收集 '+s.candidates.length+' / '+s.config.limit+' 个不同主页，缺少 '+(s.config.limit-s.candidates.length)+' 个。当前来源暂未提供更多结果；可点“继续寻找主页”重试加载，或补充关键词后继续。已找到的主页（包括无邮箱）保留在下方清单。';await this.save();return;
+  }
+  s.phase='done';s.activeItem='';s.reason='已收集 '+s.candidates.length+' 个不同主页；读取 '+s.cursor+' 位，保留邮箱 '+s.rows.length+' 位。主页清单包含无邮箱账号，可单独下载；邮箱线索连接系统后自动保存。';await this.save();return;
+  }
  }catch(e){if(!this.cancelled)await this.pause('任务已暂停：'+String(e.message||e).slice(0,240));}finally{this.active=false;}}
  async skip(){if(this.active)throw Error('请等待任务暂停后操作');const s=this.state;
   if(s.activeItem==='profile'||s.stage==='collection'){if(s.cursor<s.candidates.length){s.outcomes.push({url:s.candidates[s.cursor],status:'failed',reason:'用户跳过未能读取的主页'});s.cursor++;await this.save();}return;}
