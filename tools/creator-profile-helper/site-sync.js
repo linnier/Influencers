@@ -7,8 +7,8 @@ async function connection(){return (await chrome.storage.local.get(CONNECTION))[
 async function tab(){const found=await chrome.tabs.query({url:SITE+'*'});const current=found.find(t=>t.url?.startsWith(SITE));if(!current)throw Error('请保持一个已登录的达人系统标签页打开，再点“重试待保存”。');return current.id;}
 async function request(id,action,cards,expectedActorId){const results=await chrome.scripting.executeScript({target:{tabId:id},world:'MAIN',func:async(action,cards,expected)=>{
  if(location.origin!=='https://47.86.198.65'||!location.pathname.startsWith('/creators/'))return {error:'系统标签页地址不一致'};
- const path=action==='me'?'/creators/api/discovery/connection':'/creators/api/discovery/profile-cards';
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);try{const response=await fetch(path,action==='me'?{credentials:'same-origin',cache:'no-store',signal:controller.signal}:{method:'POST',credentials:'same-origin',signal:controller.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({cards,expectedActorId:expected})});if(response.status===401)return {error:'系统登录已过期，请在系统页面登录后重试。'};const data=await response.json();if(response.ok&&action==='save'){try{document.getElementById('discoveryReload')?.click()}catch{}}return response.ok?{data}:{error:data.error||'系统保存失败'};}catch{return {error:'系统页面无法连接或请求超时，结果已保留供重试。'};}finally{clearTimeout(timer);}
+ const path=action==='me'?'/creators/api/discovery/connection':action==='list'?'/creators/api/discovery':'/creators/api/discovery/profile-cards';
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);try{const response=await fetch(path,action==='me'||action==='list'?{credentials:'same-origin',cache:'no-store',signal:controller.signal}:{method:'POST',credentials:'same-origin',signal:controller.signal,headers:{'Content-Type':'application/json'},body:JSON.stringify({cards,expectedActorId:expected})});if(response.status===401)return {error:'系统登录已过期，请在系统页面登录后重试。'};const data=await response.json();if(response.ok&&action==='save'){try{document.getElementById('discoveryReload')?.click()}catch{}}return response.ok?{data}:{error:data.error||'系统保存失败'};}catch{return {error:'系统页面无法连接或请求超时，结果已保留供重试。'};}finally{clearTimeout(timer);}
  },args:[action,cards||[],expectedActorId||'']});const result=results[0]?.result;if(!result||result.error)throw Error(result?.error||'系统没有返回保存结果');return result.data;}
 async function flush(){return navigator.locks.request(ARCHIVE+'.sync',async()=>{
  const snapshot=await lock(async()=>({config:await connection(),rows:clone(await archive())})),{config,rows}=snapshot;
@@ -30,5 +30,6 @@ async function connect(){// Invoked directly from the user's connect button.
  await chrome.storage.local.set({[CONNECTION]:{enabled:true,actorId:actor.id,username:actor.username}});return {actor,result:await flush()};
 }
 async function disconnect(){await chrome.storage.local.set({[CONNECTION]:null});}
-root.IteaSync={SITE,ARCHIVE,CONNECTION,archive,connection,keep,flush,connect,disconnect};
+async function membership(){const config=await connection();if(!config?.enabled)throw Error('未连接系统，入库状态待核对');const id=await tab(),before=await request(id,'me');if(before.id!==config.actorId)throw Error('系统登录账号已变化，请重新连接后核对入库状态');const result=await request(id,'list'),after=await request(id,'me'),current=await connection();if(after.id!==before.id||current?.actorId!==config.actorId||!current?.enabled)throw Error('系统账号已变化，入库状态待核对');if(result.libraryStatusAvailable===false)throw Error('系统暂时无法核对达人库，稍后重试');return {actorId:config.actorId,rows:result.rows||[]};}
+root.IteaSync={membership,SITE,ARCHIVE,CONNECTION,archive,connection,keep,flush,connect,disconnect};
 })(globalThis);
