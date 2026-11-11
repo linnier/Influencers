@@ -21,7 +21,7 @@ function render(s){
  }
  if(!s.rows.length){const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=5;td.className='empty';td.textContent='有公开邮箱的达人会出现在这里。';tr.append(td);tbody.append(tr)}}
  const count=s.rows.filter(r=>selected.has(r.url)).length;$('copy').disabled=$('download').disabled=!count;$('all').checked=!!s.rows.length&&count===s.rows.length;$('all').indeterminate=count>0&&count<s.rows.length;
- const inventory=$('homepages');if(inventory){inventory.textContent=s.candidates.map((url,i)=>{const row=s.rows.find(r=>r.url===url),out=s.outcomes.find(r=>r.url===url&&['skipped','failed'].includes(r.status));return (i+1)+'. '+url+' · '+(row?'有邮箱':out?.status==='skipped'?'无公开邮箱':out?.status==='failed'?'读取失败／跳过':i<s.cursor?'已读取':'待读取')}).join('\n');$('homepageCount').textContent=s.candidates.length;$('downloadHomepages').disabled=!s.candidates.length;}
+ const inventory=$('homepages');if(inventory){inventory.textContent=s.rows.map((row,i)=>(i+1)+'. '+row.url+' · '+row.email).join('\n');$('homepageCount').textContent=s.rows.length;$('downloadHomepages').disabled=!s.rows.length;}
  $('log').replaceChildren();for(const row of s.outcomes.slice(-80)){const li=document.createElement('li');li.textContent=row.url+' · '+row.reason;$('log').append(li)}
 }
 async function save(s){await chrome.storage.local.set({[KEY]:s});render(s)}
@@ -70,7 +70,7 @@ $('setup').onsubmit=async e=>{e.preventDefault();if(busy)return;
 };
 $('pause').onclick=()=>{if(runner)void runner.pause('你已暂停任务。继续时会重试当前页面，不会重复保存已完成达人。')};
 $('resume').onclick=()=>{if(runner?.state.phase==='shortfall'){const keyword=$('keyword').value.trim();if(keyword&&keyword!==runner.state.config.keyword){runner.state.config.keyword=keyword;runner.state.searchIndex=0;}}void execute()};
-$('downloadHomepages').onclick=()=>{const blob=new Blob([runner.state.candidates.join('\n')],{type:'text/plain;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='itea-creator-homepages.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+$('downloadHomepages').onclick=()=>{const blob=new Blob([runner.state.rows.map(row=>row.url).join('\n')],{type:'text/plain;charset=utf-8'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='itea-creator-homepages.txt';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
 $('skip').onclick=async()=>{try{await runner.skip();await execute()}catch(e){$('status').textContent=e.message}};
 $('work').onclick=async()=>{try{const s=runner.state,id=s.stage==='discovery'?s.searchTab:s.workTab;await chrome.tabs.update(id,{active:true})}catch{$('status').textContent='工作标签页已关闭，请继续任务重新打开。'}};
 $('all').onchange=()=>{for(const r of runner?.state.rows||[])$('all').checked?selected.add(r.url):selected.delete(r.url);render(runner.state)};

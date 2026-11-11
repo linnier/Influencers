@@ -77,9 +77,9 @@ class Runner{
    if(s.searchRound<s.config.maxRounds&&s.emptyRounds<8&&s.posts.length<s.config.postLimit){s.stage='discovery';await this.io.scroll(s.searchTab);continue;}
    const keywords=String(s.config.keyword).split(/[;；\n]+/).map(x=>x.trim()).filter(Boolean);
    if((s.searchIndex||0)+1<keywords.length&&s.posts.length<s.config.postLimit){s.searchIndex=(s.searchIndex||0)+1;s.searchRound=0;s.emptyRounds=0;s.stage='discovery';continue;}
-   s.phase='shortfall';s.activeItem='';s.reason='尚未达到主页目标：已收集 '+s.candidates.length+' / '+s.config.limit+' 个不同主页，缺少 '+(s.config.limit-s.candidates.length)+' 个。当前来源暂未提供更多结果；可点“继续寻找主页”重试加载，或补充关键词后继续。已找到的主页（包括无邮箱）保留在下方清单。';await this.save();return;
+   s.phase='shortfall';s.activeItem='';s.reason='尚未达到主页目标：已收集 '+s.candidates.length+' / '+s.config.limit+' 个不同主页，缺少 '+(s.config.limit-s.candidates.length)+' 个。当前来源暂未提供更多结果；可点“继续寻找主页”重试加载，或补充关键词后继续。只保留有公开邮箱的达人；无邮箱主页已跳过。';await this.save();return;
   }
-  s.phase='done';s.activeItem='';s.reason='已收集 '+s.candidates.length+' 个不同主页；读取 '+s.cursor+' 位，保留邮箱 '+s.rows.length+' 位。主页清单包含无邮箱账号，可单独下载；邮箱线索连接系统后自动保存。';await this.save();return;
+  s.phase='done';s.activeItem='';s.reason='已收集 '+s.candidates.length+' 个不同主页；读取 '+s.cursor+' 位，保留邮箱 '+s.rows.length+' 位。仅保留有公开邮箱的主页，可单独下载；邮箱线索连接系统后自动保存。';await this.save();return;
   }
  }catch(e){if(!this.cancelled)await this.pause('任务已暂停：'+String(e.message||e).slice(0,240));}finally{this.active=false;}}
  async skip(){if(this.active)throw Error('请等待任务暂停后操作');const s=this.state;
