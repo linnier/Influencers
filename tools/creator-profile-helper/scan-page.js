@@ -11,11 +11,25 @@ function gate(d){
  if(/verify (?:to continue|you are human)|security check|too many requests|temporarily blocked|try again later|unusual activity|访问过于频繁|操作频繁|稍后再试|安全验证|请完成验证/i.test(text))return '平台出现验证或访问限制，任务已暂停。';
  return '';
 }
+function searchContext(d,platform){
+ const accountsSearch=platform==='TikTok'&&/^\/search\/user\/?$/.test(d.location.pathname),valid=a=>{if(!shown(a)||a.closest('nav,footer,aside'))return false;return platform==='Instagram'?!!(post(a.href)||root.IteaProfileCard.profile(a.href)?.platform==='Instagram'):accountsSearch?root.IteaProfileCard.profile(a.href)?.platform==='TikTok':!!tiktokAuthor(a.href);};
+ const mains=[...d.querySelectorAll('main,[role="main"]')].filter(shown),ranked=mains.map(scope=>({scope,anchors:[...scope.querySelectorAll('a[href]')].filter(valid)})).sort((a,b)=>b.anchors.length-a.anchors.length);let found=ranked[0];if(!found?.anchors.length){const anchors=[...d.body.querySelectorAll('a[href]')].filter(valid);if(anchors.length)found={scope:d.body,anchors};}return {...(found||{scope:d.body,anchors:[]}),accountsSearch};
+}
+function searchHost(d,anchors){for(let node=anchors.at(-1)?.parentElement;node;node=node.parentElement){if(node.clientHeight>100&&node.scrollHeight>node.clientHeight+4&&/auto|scroll/.test(d.defaultView.getComputedStyle(node).overflowY))return node;}return d.scrollingElement||d.documentElement;}
+function searchSnapshot(d,platform,context=searchContext(d,platform)){const host=searchHost(d,context.anchors),height=host.clientHeight||d.defaultView.innerHeight||0,top=Math.round(host.scrollTop||0),scrollHeight=Math.round(host.scrollHeight||0);const loading=[...context.scope.querySelectorAll('[aria-busy="true"],[role="progressbar"],[data-e2e*="loading"],[data-testid*="loading"]')].some(el=>shown(el)&&!el.closest('article,video'));
+ return {schema:'itea.search-scroll.v1',url:d.location.href,platform,visibility:d.visibilityState,readyState:d.readyState,resultLinks:context.anchors.length,first:context.anchors[0]?.href||'',last:context.anchors.at(-1)?.href||'',host:host.tagName,top,height,scrollHeight,atEnd:height>0&&top+height>=scrollHeight-8,loading};
+}
+async function scroll(d,platform,retry=false){const reason=gate(d);if(reason)return {blocked:true,reason};const path=d.location.pathname;if(platform==='Instagram'?!path.startsWith('/explore/search'):!path.startsWith('/search'))return {error:true,reason:'当前工作页不是搜索结果页，请检查是否被重定向。'};const context=searchContext(d,platform),host=searchHost(d,context.anchors),before=searchSnapshot(d,platform,context);const win=d.defaultView;
+ // Bring the last rendered result into view inside its actual scrolling ancestors.
+ // This also works when the results live in a nested pane rather than the window.
+ if(retry&&before.atEnd&&before.top>0){host.scrollTop=Math.max(0,before.top-240);await new Promise(resolve=>win.setTimeout(resolve,160));}
+ context.anchors.at(-1)?.scrollIntoView?.({block:'end',inline:'nearest',behavior:'instant'});
+ host.scrollTop=Math.min(Math.max(0,host.scrollHeight-before.height),host.scrollTop+Math.max(320,before.height*.8));
+ await new Promise(resolve=>win.setTimeout(resolve,120));const after=searchSnapshot(d,platform);return {...after,moved:after.top!==before.top,previousTop:before.top,previousHeight:before.scrollHeight};
+}
 function scan(d,platform,seen={}){const seenUrls=new Set(seen.urls||[]),seenPosts=new Set(seen.posts||[]);const reason=gate(d);if(reason)return {blocked:true,reason};const u=new URL(d.location.href);const correct=platform==='TikTok'?u.hostname==='www.tiktok.com'&&u.pathname.startsWith('/search'):u.hostname==='www.instagram.com'&&u.pathname.startsWith('/explore/search');if(!correct)return {error:true,reason:'当前工作页不是预期的搜索页面，请检查是否被重定向。'};
- const main=d.querySelector('main,[role="main"]');if(!shown(main))return {error:true,reason:'未找到搜索结果区域，请等待页面加载，或检查平台是否要求登录。'};
- const accountsSearch=platform==='TikTok'&&/^\/search\/user\/?$/.test(u.pathname);
- const urls=[],posts=[];for(const a of main.querySelectorAll('a[href]')){if(!shown(a)||a.closest('nav,footer,aside'))continue;const p=platform==='TikTok'&&!accountsSearch?tiktokAuthor(a.href):root.IteaProfileCard.profile(a.href),entry=platform==='Instagram'?post(a.href):null;if(p&&p.platform===platform&&!seenUrls.has(p.url)&&!urls.includes(p.url)&&urls.length<300)urls.push(p.url);if(entry&&!seenPosts.has(entry)&&!posts.includes(entry)&&posts.length<900)posts.push(entry);if(urls.length>=300&&posts.length>=900)break;}
- return {urls,posts,ready:true};
+ const context=searchContext(d,platform),urls=[],posts=[];for(const a of context.anchors){const p=platform==='TikTok'&&!context.accountsSearch?tiktokAuthor(a.href):root.IteaProfileCard.profile(a.href),entry=platform==='Instagram'?post(a.href):null;if(p&&p.platform===platform&&!seenUrls.has(p.url)&&!urls.includes(p.url)&&urls.length<300)urls.push(p.url);if(entry&&!seenPosts.has(entry)&&!posts.includes(entry)&&posts.length<900)posts.push(entry);if(urls.length>=300&&posts.length>=900)break;}
+ return {urls,posts,ready:true,diagnostic:searchSnapshot(d,platform,context)};
 }
 function author(d,expected){
  const reason=gate(d);if(reason)return {status:'blocked',reason};
@@ -75,5 +89,5 @@ function author(d,expected){
  if(pairs.length)return {status:'found',url:pairs[0].owner.url,postUrl:current};
  return {status:'error',reason:'未能确认帖子的顶部作者栏。请复制页面诊断反馈；不会从文案、评论或推荐列表猜测作者。',diagnostic:{schema:'itea.post-layout.v1',postUrl:current,articleFound:!!article,mainFound:scopes.length>0,primaryMedia:primary?rect(primary):null,mediaCount:media.length,mediaRects:media.map(rect),candidateBars:bars}};
 }
-root.IteaScan={gate,scan,post,author,tiktokAuthor};
+root.IteaScan={gate,scan,post,author,tiktokAuthor,scroll,searchSnapshot};
 })(globalThis);

@@ -5,11 +5,12 @@ function links(raw){const valid=[],invalid=[];for(const s of String(raw||'').spl
 function config(value){const limit=Math.max(1,Math.min(LIMIT,Number(value.limit)||100));return {...value,searchType:value.searchType==='accounts'?'accounts':'content',limit,maxRounds:Math.min(120,Math.max(12,Math.ceil(limit/10)*4)),postLimit:Math.min(6000,Math.max(300,limit*20)),paceMs:Number(value.paceMs)===2000?2000:800,urls:(value.urls||[]).slice(0,LIMIT)};}
 function newState(value){return {version:1,phase:'idle',stage:value.mode==='links'?'collection':'discovery',config:config(value),candidates:(value.urls||[]).slice(0,LIMIT),cursor:0,rows:[],outcomes:[],searchRound:0,emptyRounds:0,posts:[],postCursor:0,cachedUrls:[],observedProfiles:[],searchTab:null,workTab:null,reason:'',activeItem:''};}
 class Runner{
- constructor(state,io){state.config=config(state.config);for(const key of ['posts','cachedUrls','observedProfiles'])state[key]=state[key]||[];state.postCursor=state.postCursor||0;this.state=state;this.io=io;this.active=false;this.cancelled=false;this.known=new Set(state.config.knownUrls||[]);}
+ constructor(state,io){state.config=config(state.config);if(state.phase==='shortfall'&&state.config.mode!=='links')state.searchStalled=true;for(const key of ['posts','cachedUrls','observedProfiles'])state[key]=state[key]||[];state.postCursor=state.postCursor||0;this.state=state;this.io=io;this.active=false;this.cancelled=false;this.known=new Set(state.config.knownUrls||[]);}
  async save(){await this.io.save(this.state);}
  knownURL(url){return !this.state.config.repairFans&&this.state.config.skipKnown!==false&&this.known.has(url);}
  cached(url){if(!this.state.cachedUrls.includes(url))this.state.cachedUrls.push(url);}
  async pause(reason='已暂停，可继续当前任务。'){this.cancelled=true;this.state.phase='paused';this.state.reason=reason;await this.save();}
+ async scrollSearch(){if(this.cancelled)return;const info=await this.io.scroll(this.state.searchTab);if(info?.blocked||info?.error){await this.pause(info.reason);return;}if(info)this.state.lastScroll=info;}
  async consume(){const s=this.state,url=s.candidates[s.cursor];if(this.cancelled)return false;
   if(this.knownURL(url)){this.cached(url);s.cursor++;await this.save();return true;}
   s.activeItem='profile';s.phase='collecting';await this.save();if(this.cancelled)return false;
@@ -31,21 +32,21 @@ class Runner{
  }
  async run(){if(this.active)return;this.active=true;this.cancelled=false;const s=this.state;try{
   s.reason='';
-  if(s.phase==='shortfall'){s.stage='discovery';s.emptyRounds=0;s.searchRound=0;s.config.postLimit=Math.max(s.config.postLimit,s.posts.length+Math.min(6000,Math.max(300,s.config.limit*20)));}
+  if(s.phase==='shortfall'||s.stage==='discovery'&&s.searchStalled){s.stage='discovery';s.emptyRounds=0;s.searchRound=0;s.searchStalled=false;s.resumeSearch=true;s.config.postLimit=Math.max(s.config.postLimit,s.posts.length+Math.min(6000,Math.max(300,s.config.limit*20)));}
   while(true){
   if(s.stage==='discovery'){
    s.phase='discovering';s.activeItem='';await this.save();if(this.cancelled)return;
-   s.searchTab=await this.io.searchTab(s.searchTab,searchUrl(s.config.platform,String(s.config.keyword).split(/[;；\n]+/).map(x=>x.trim()).filter(Boolean)[s.searchIndex||0],s.config.searchType));if(this.cancelled)return;await this.save();
+   s.searchTab=await this.io.searchTab(s.searchTab,searchUrl(s.config.platform,String(s.config.keyword).split(/[;；\n]+/).map(x=>x.trim()).filter(Boolean)[s.searchIndex||0],s.config.searchType));if(this.cancelled)return;await this.save();if(s.resumeSearch){s.resumeSearch=false;await this.scrollSearch();if(this.cancelled)return;}
    while(s.searchRound<s.config.maxRounds&&s.candidates.length<s.config.limit&&s.posts.length<s.config.postLimit){
     if(this.cancelled)return;const result=await this.io.scan(s.searchTab,s.config.platform);if(this.cancelled)return;
     if(result.blocked||result.error){await this.pause(result.reason||'搜索页暂时无法读取，请检查工作标签页后继续。');return;}
     const before=s.observedProfiles.length+s.posts.length;
     for(const raw of result.urls||[]){const a=root.IteaProfileCard.profile(raw);if(!a||a.platform!==s.config.platform)continue;if(!s.observedProfiles.includes(a.url))s.observedProfiles.push(a.url);if(this.knownURL(a.url)){this.cached(a.url);continue;}if(!s.candidates.includes(a.url)&&s.candidates.length<s.config.limit)s.candidates.push(a.url);}
     for(const raw of result.posts||[]){const url=root.IteaScan.post(raw);if(s.config.platform==='Instagram'&&url&&!s.posts.includes(url)&&s.posts.length<s.config.postLimit)s.posts.push(url);}
-    s.emptyRounds=s.observedProfiles.length+s.posts.length===before?s.emptyRounds+1:0;s.searchRound++;await this.save();if(this.cancelled)return;
+    s.searchDiagnostic=result.diagnostic||s.searchDiagnostic;const waiting=result.diagnostic?.loading||s.lastScroll?.moved&&!s.lastScroll.atEnd;s.emptyRounds=s.observedProfiles.length+s.posts.length===before?(waiting?0:s.emptyRounds+1):0;s.searchRound++;await this.save();if(this.cancelled)return;
     if(result.end)s.emptyRounds=8;
     if(s.candidates.length>=s.config.limit||s.posts.length>=s.config.postLimit||result.end||s.emptyRounds>=8||s.posts.length-s.postCursor>=30||s.candidates.length-s.cursor>=30)break;
-    await this.io.scroll(s.searchTab);if(this.cancelled)return;
+    await this.scrollSearch();if(this.cancelled)return;
    }
    if(!s.candidates.length&&!s.posts.length){
     const keywords=String(s.config.keyword).split(/[;；\n]+/).map(x=>x.trim()).filter(Boolean);
@@ -74,10 +75,10 @@ class Runner{
   }
   while(s.cursor<s.candidates.length){if(!await this.consume())return;if(s.cursor<s.candidates.length)await this.io.delay();}
   if(s.config.mode!=='links'&&s.candidates.length<s.config.limit){
-   if(s.searchRound<s.config.maxRounds&&s.emptyRounds<8&&s.posts.length<s.config.postLimit){s.stage='discovery';await this.io.scroll(s.searchTab);continue;}
+   if(s.searchRound<s.config.maxRounds&&s.emptyRounds<8&&s.posts.length<s.config.postLimit){s.stage='discovery';await this.scrollSearch();if(this.cancelled)return;continue;}
    const keywords=String(s.config.keyword).split(/[;；\n]+/).map(x=>x.trim()).filter(Boolean);
    if((s.searchIndex||0)+1<keywords.length&&s.posts.length<s.config.postLimit){s.searchIndex=(s.searchIndex||0)+1;s.searchRound=0;s.emptyRounds=0;s.stage='discovery';continue;}
-   s.phase='shortfall';s.activeItem='';s.reason='尚未达到主页目标：已收集 '+s.candidates.length+' / '+s.config.limit+' 个不同主页，缺少 '+(s.config.limit-s.candidates.length)+' 个。当前来源暂未提供更多结果；可点“继续寻找主页”重试加载，或补充关键词后继续。只保留有公开邮箱的达人；无邮箱主页已跳过。';await this.save();return;
+   s.searchStalled=true;s.diagnostic=s.searchDiagnostic||s.lastScroll||null;s.phase='shortfall';s.activeItem='';s.reason='搜索加载暂未推进：已收集 '+s.candidates.length+' / '+s.config.limit+' 个不同主页，缺少 '+(s.config.limit-s.candidates.length)+' 个。'+(s.searchDiagnostic?.loading?'搜索页仍显示加载中。':s.searchDiagnostic?.visibility==='hidden'?'搜索页在后台，尚未确认能继续加载。':s.lastScroll?.moved===false?'搜索结果区域未继续滚动或已到当前列表底部。':'本轮没有识别到新的结果链接。')+'可启用“搜索页保持前台”后继续，或点“查看搜索页”检查加载情况；登录或验证需先处理。可复制页面诊断定位原因。只保留有公开邮箱的达人；无邮箱主页已跳过。';await this.save();return;
   }
   s.phase='done';s.activeItem='';s.reason='已收集 '+s.candidates.length+' 个不同主页；读取 '+s.cursor+' 位，保留邮箱 '+s.rows.length+' 位。仅保留有公开邮箱的主页，可单独下载；邮箱线索连接系统后自动保存。';await this.save();return;
   }

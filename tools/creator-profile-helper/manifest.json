@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "itea 资料卡邮箱采集助手",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "关键词扫描平台搜索结果，逐个读取达人公开资料卡；有邮箱保留，无邮箱跳过，验证或限制时暂停。",
   "permissions": [
     "activeTab",
