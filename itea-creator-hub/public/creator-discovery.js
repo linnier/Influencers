@@ -1,5 +1,5 @@
 (function(root){'use strict';
-const HELPER_VERSION='1.5.2';
+const HELPER_VERSION='1.5.3';
 const $=id=>document.getElementById(id),E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));let lastCollection=null,records=[],loaded=false,error='',flight=null,pending=false,selected=new Set(),savedOnly=false,mode='saved',searchConfig=null,onlineIds=null,reviewFollowers=false,searchSummary='',filter={q:'',platform:'',region:'',source:'',fans:'all',min:'',max:''};
 let libraryView='out',page=1,pageSize=10;
 function libraryGroup(r){return r.imported?'in':r.libraryStatus==='入库状态暂未核对'||!r.libraryStatus?'unknown':'out';}

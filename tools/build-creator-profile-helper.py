@@ -16,7 +16,7 @@ if count != 1:
 if updated != text:
     ui.write_text(updated)
 with zipfile.ZipFile(target, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
-    for name in ['README.txt', 'manifest.json', 'popup.css', 'popup.html', 'popup.js', 'profile-card.js', 'wordmark.png', 'batch.html', 'batch.css', 'batch.js', 'batch-core.js', 'scan-page.js', 'follower-count.js', 'site-sync.js', 'scan-history.js']:
+    for name in ['README.txt', 'manifest.json', 'popup.css', 'popup.html', 'popup.js', 'profile-card.js', 'wordmark.png', 'batch.html', 'batch.css', 'batch.js', 'batch-core.js', 'work-tabs.js', 'scan-page.js', 'follower-count.js', 'site-sync.js', 'scan-history.js']:
         path = source / name
         if path.is_file():
             item = zipfile.ZipInfo(path.name, date_time=(2026, 11, 9, 0, 0, 0))
