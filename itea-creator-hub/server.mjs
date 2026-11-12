@@ -1,3 +1,4 @@
+import {createApplicationCorrection} from './application-correction.mjs';
 import {createCreatorMerge} from './creator-merge.mjs';
 import {createSearchProvider} from './discovery-search.mjs';
 import {createDiscovery} from './discovery-core.mjs';
@@ -83,6 +84,7 @@ hooks.authorize=authorizeCurrent;hooks.confirmed=lifecycle.confirmed;hooks.issue
 const searchService=createSearchProvider({store:workflow.store,checkActor,secret:process.env.LARK_APP_SECRET||password,envKey:process.env.BRAVE_SEARCH_API_KEY||''});
 const discovery=createDiscovery({store:workflow.store,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,checkActor,searchService});
 const creatorMerge=createCreatorMerge({store:workflow.store,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,checkActor});
+const applicationCorrection=createApplicationCorrection({store:workflow.store,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,checkActor});
 const reminderTimer=process.env.DISABLE_AUTOMATIC_REMINDERS==='true'?null:setInterval(()=>void lifecycle.tick(),60000);reminderTimer?.unref();
 const server=http.createServer(async(req,res)=>{
  try{
@@ -118,6 +120,7 @@ const server=http.createServer(async(req,res)=>{
    json(res,200,globalThis.ProjectReportCore.build(current.state,rows,input,{revision:current.revision,readAt:current.readAt}));return;
   }
   if(await management.handle(req,res,url,actor,payload))return;
+  if(await applicationCorrection.handle(req,res,url,actor,payload,json))return;
   if(await creatorMerge.handle(req,res,url,actor,payload,json))return;
   if(await discovery.handle(req,res,url,actor,payload,json))return;
   if(actor.role==='viewer'){
