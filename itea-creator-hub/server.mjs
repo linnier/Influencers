@@ -1,3 +1,4 @@
+import {createMailImages} from './mail-images.mjs';
 import {createApplicationCorrection} from './application-correction.mjs';
 import {createCreatorMerge} from './creator-merge.mjs';
 import {createSearchProvider} from './discovery-search.mjs';
@@ -76,7 +77,8 @@ const saveWorkflowState=async(state,revision)=>{
 function checkActor(actor,rows){if(actor.id==='bootstrap'||actor.role==='system')return;const live=rows.find(r=>r.kind==='user'&&r.id===actor.id);forbidden(live&&live.enabled!==false&&(live.version||1)===actor.version,'账号或权限已变化，请重新登录');}
 async function authorizeCurrent(path,payload,rows,state){const actor=context.getStore();if(!actor)return;checkActor(actor,rows);if(actor.role==='admin')return;forbidden(actor.role==='owner');forbidden(!['/api/lifecycle/form','/api/lifecycle/intake-review'].includes(path),'全局入库设置由管理员管理');let project=payload?.project;const lookup=['/api/workflow/send','/api/workflow/delivery','/api/workflow/cancel'].includes(path)?'invite':path==='/api/workflow/review'?'application':path.endsWith('/report-review')?'report':path.includes('/notice-')?'notification':'';if(lookup)project=rows.find(r=>r.kind===lookup&&r.id===payload?.id)?.project;const current=state||(await getWorkflowState({rows})).state;forbidden(project&&current.projects.some(p=>p.id===project&&p.owner===actor.owner),'项目负责人已变化或无权操作此项目');}
 const validateView=state=>validate(state,{view:true}),hooks={};
-workflow=createWorkflow({lark,db,auth,validate:validateView,getState:getWorkflowState,saveState:saveWorkflowState,hooks});
+const mailImages=createMailImages({dataDir});
+workflow=createWorkflow({images:mailImages,lark,db,auth,validate:validateView,getState:getWorkflowState,saveState:saveWorkflowState,hooks});
 accountsManager=createAccounts({store:workflow.store});
 const management=createAdminManagement({store:workflow.store,accounts:accountsManager,readRaw,saveRaw,validate,checkActor});
 const lifecycle=createLifecycle({reviewer:()=>context.getStore()?.username||'team',store:workflow.store,mail:workflow.mail,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,key:process.env.LARK_APP_SECRET||password||'local-workflow-development',baseURL:process.env.PUBLIC_BASE_URL||process.env.RENDER_EXTERNAL_URL,authorizeMutation:authorizeCurrent});
@@ -119,6 +121,7 @@ const server=http.createServer(async(req,res)=>{
    if(url.searchParams.has('revision')&&String(current.revision)!==url.searchParams.get('revision')){json(res,409,{error:'项目资料已更新，请返回项目总览刷新资料后重新生成报告'});return;}
    json(res,200,globalThis.ProjectReportCore.build(current.state,rows,input,{revision:current.revision,readAt:current.readAt}));return;
   }
+  if(url.pathname.startsWith('/api/mail-images')){const rows=await workflow.store.rows();if(await mailImages.handle(req,res,url,actor,payload,{getState:getWorkflowState,rows,checkActor,json}))return;}
   if(await management.handle(req,res,url,actor,payload))return;
   if(await applicationCorrection.handle(req,res,url,actor,payload,json))return;
   if(await creatorMerge.handle(req,res,url,actor,payload,json))return;
