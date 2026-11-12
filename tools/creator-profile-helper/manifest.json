@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "itea 资料卡邮箱采集助手",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "description": "关键词扫描平台搜索结果，逐个读取达人公开资料卡；有邮箱保留，无邮箱跳过，验证或限制时暂停。",
   "permissions": [
     "activeTab",
@@ -16,6 +16,6 @@
   "optional_host_permissions": [
     "https://www.instagram.com/*",
     "https://www.tiktok.com/*",
-    "https://47.86.198.65/*"
+    "https://43.106.95.29/*"
   ]
 }

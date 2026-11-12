@@ -4,7 +4,7 @@ $('copy').onclick=async()=>{if(!record)return;try{await navigator.clipboard.writ
 
 $('batch').onclick=async()=>{await chrome.tabs.create({url:chrome.runtime.getURL('batch.html')});window.close()};
 
-async function syncStatus(){const [config,rows]=await Promise.all([IteaSync.connection(),IteaSync.archive()]);$('syncStatus').textContent=(config?.enabled?'已连接 '+config.username+' · ':'未连接系统 · ')+'本机保存 '+rows.length+' 位，待同步 '+rows.filter(r=>!r.savedAt).length+' 位。';}
+async function syncStatus(){const [config,rows]=await Promise.all([IteaSync.connection(),IteaSync.archive()]);$('syncStatus').textContent=(config?.enabled?(config.site===IteaSync.SITE?'已连接 '+config.username+' · ':'系统地址已更新，请重新连接 · '):'未连接系统 · ')+'本机保存 '+rows.length+' 位，待同步 '+rows.filter(r=>!r.savedAt).length+' 位。';}
 $('connect').onclick=async()=>{try{const result=await IteaSync.connect();$('status').textContent=result.result.error||'连接成功，今后读到公开邮箱将自动保存到系统达人发现。';await syncStatus()}catch(e){$('status').textContent=e.message}};
 $('retry').onclick=async()=>{try{const r=await IteaSync.flush();$('status').textContent=r.error||r.reason||('已同步 '+r.saved+' 位，待保存 '+r.pending+' 位。');await syncStatus()}catch(e){$('status').textContent=e.message}};
 void syncStatus();
