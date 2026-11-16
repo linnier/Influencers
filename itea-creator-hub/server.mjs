@@ -84,7 +84,8 @@ const management=createAdminManagement({store:workflow.store,accounts:accountsMa
 const lifecycle=createLifecycle({reviewer:()=>context.getStore()?.username||'team',store:workflow.store,mail:workflow.mail,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,key:process.env.LARK_APP_SECRET||password||'local-workflow-development',baseURL:process.env.PUBLIC_BASE_URL||process.env.RENDER_EXTERNAL_URL,authorizeMutation:authorizeCurrent});
 hooks.authorize=authorizeCurrent;hooks.confirmed=lifecycle.confirmed;hooks.issued=lifecycle.issued;
 const searchService=createSearchProvider({store:workflow.store,checkActor,secret:process.env.LARK_APP_SECRET||password,envKey:process.env.BRAVE_SEARCH_API_KEY||''});
-const discovery=createDiscovery({store:workflow.store,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,checkActor,searchService});
+const getCandidateDirectory=async({rowsPromise}={})=>{const [raw,rows]=await Promise.all([lark?lark.readDirectory():readRaw({coalesce:true,browse:true}),rowsPromise||workflow.store.rows({coalesce:true})]);return {...raw,state:visibleState(raw.state,rows)}};
+const discovery=createDiscovery({getCandidatesState:getCandidateDirectory,store:workflow.store,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,checkActor,searchService});
 const creatorMerge=createCreatorMerge({store:workflow.store,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,checkActor});
 const applicationCorrection=createApplicationCorrection({store:workflow.store,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,checkActor});
 const reminderTimer=process.env.DISABLE_AUTOMATIC_REMINDERS==='true'?null:setInterval(()=>void lifecycle.tick(),60000);reminderTimer?.unref();
