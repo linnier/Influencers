@@ -130,7 +130,7 @@ const server=http.createServer(async(req,res)=>{
   if(actor.role==='viewer'){
    forbidden(req.method==='GET','查阅账号不能修改数据');forbidden(!['/api/workflow/export','/api/setup'].includes(url.pathname),'查阅账号不能导出数据或查看配置');
    if(url.pathname==='/api/state'){const raw=await getWorkflowState({coalesce:true,browse:true,force:url.searchParams.get('fresh')==='1'||req.headers['x-data-refresh']==='1'});json(res,200,{...raw,state:redactState(raw.state)});return;}
-   if(url.pathname==='/api/workflow'){const rows=await workflow.store.rows({coalesce:true,browse:true,force:req.headers['x-data-refresh']==='1'});json(res,200,{ready:true,mail:await workflow.mail.status(rows),rows:readOnlyWorkflow(rows)});return;}
+   if(url.pathname==='/api/workflow'){const project=String(req.headers['x-workflow-project']||''),rows=await workflow.store.invitationRows({project,force:req.headers['x-data-refresh']==='1'});json(res,200,{ready:true,project,legacyReadFallback:workflow.store.invitationFiltersUnsupported===true,mail:await workflow.mail.status(rows),rows:readOnlyWorkflow(rows)});return;}
    if(url.pathname.startsWith('/api/lifecycle')){const rowsPromise=workflow.store.rows({coalesce:true,browse:true,force:req.headers['x-data-refresh']==='1'}),[rows,current]=await Promise.all([rowsPromise,getWorkflowState({coalesce:true,browse:true,force:req.headers['x-data-refresh']==='1',rowsPromise})]);const project=url.searchParams.get('project');json(res,200,readOnlyLifecycle(rows,current.state,project,lifecycle.settings(rows,project),lifecycle.reminders(current.state,rows,project)));return;}
    forbidden(!url.pathname.startsWith('/api/mail/'),'查阅账号不能使用邮箱');
   }

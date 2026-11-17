@@ -21,6 +21,28 @@ export class WorkflowStore{
   catch(e){if(this.rowsEpoch===epoch)this.browseCache=null;throw e;}
   finally{if(this.browseFlight===flight)this.browseFlight=null;}
  }
+
+ async invitationRows({project='',force=false}={}){
+  if(typeof project!=='string'||project.length>80||/[\r\n]/.test(project))throw new LarkError('项目参数无效',400);
+  const kinds=['invite','application','issue','issue-completion','report'],select=rows=>rows.filter(r=>r.id==='MAIL_AUTH'||kinds.includes(r.kind)&&(!project||r.project===project));
+  if(!this.lark||this.invitationFiltersUnsupported)return select(await this.rows({coalesce:true,browse:true,force}));
+  this.invitationCache??=new Map();this.invitationFlights??=new Map();
+  if(force)this.rowsEpoch++;
+  const epoch=this.rowsEpoch,providerEpoch=this.lark.readEpoch||0,started=this.now(),valid=v=>v?.epoch===epoch&&v.providerEpoch===providerEpoch;
+  if(!force&&valid(this.browseCache)&&this.browseCache.until>started)return structuredClone(select(this.browseCache.rows));
+  const cached=this.invitationCache.get(project);if(!force&&valid(cached)&&cached.until>started)return structuredClone(cached.rows);
+  let flight=this.invitationFlights.get(project);
+  if(force||!valid(flight)){
+   const promise=(async()=>{const path=await this.path(false);if(!path)return [];
+    const contains=value=>'CurrentValue.[数据].contains('+JSON.stringify(value)+')',kindFilter='OR('+kinds.map(kind=>contains(JSON.stringify(kind))).join(',')+')',filter='OR(CurrentValue.[工作流ID] = "MAIL_AUTH",'+(project?'AND('+kindFilter+','+contains(JSON.stringify(project))+')':kindFilter)+')';
+    try{return select(this.decodeRows(await this.lark.list(path+'/records?filter='+encodeURIComponent(filter))));}
+    catch(e){if((e.status===400&&/Lark请求参数错误/.test(e.message))||/Lark接口失败（1254018）/.test(e.message)){this.invitationFiltersUnsupported=true;return select(await this.rows({coalesce:true,browse:true,force}));}throw e;}
+   })();flight={epoch,providerEpoch,promise};this.invitationFlights.set(project,flight);
+  }
+  try{const rows=await flight.promise;if(this.rowsEpoch===epoch&&(this.lark.readEpoch||0)===providerEpoch){if(this.invitationCache.size>=50&&!this.invitationCache.has(project))this.invitationCache.delete(this.invitationCache.keys().next().value);this.invitationCache.set(project,{epoch,providerEpoch,rows:structuredClone(rows),until:started+this.browseTtlMs});}return structuredClone(rows);}
+  catch(e){if(this.rowsEpoch===epoch)this.invitationCache.delete(project);throw e;}
+  finally{if(this.invitationFlights.get(project)===flight)this.invitationFlights.delete(project);}
+ }
  decodeRows(records){return records.map(r=>{try{if(!scalar(r.fields?.['工作流ID']).trim()&&!scalar(r.fields?.['数据']).trim())return null;const data=JSON.parse(scalar(r.fields['数据']));if(data.id!==scalar(r.fields['工作流ID']))throw Error();return {...data,_record:r.record_id}}catch{throw new LarkError('协作工作流中有无法识别的记录，请管理员核对',409)}}).filter(Boolean);}
  async get(id){if(typeof id!=='string'||!id||id.length>200)throw new LarkError('工作流ID无效',400);if(!this.lark){const row=this.db.prepare('SELECT data FROM collaboration_workflow WHERE id=?').get(id);if(!row)return null;const data=JSON.parse(row.data);if(data.id!==id)throw new LarkError('工作流ID查询结果不匹配',409);return data;}const path=await this.path(false);if(!path)return null;if(this.targetedReadsUnsupported){const matches=(await this.rows()).filter(r=>r.id===id);if(matches.length>1)throw new LarkError('工作流ID重复，请管理员核对',409);return matches[0]||null;}const filter='CurrentValue.[工作流ID] = '+JSON.stringify(id);let records;try{records=await this.lark.list(path+'/records?filter='+encodeURIComponent(filter),2);}catch(e){if(e.status===400&&/Lark请求参数错误/.test(e.message)){this.targetedReadsUnsupported=true;return this.get(id);}throw e;}const rows=this.decodeRows(records);if(rows.length>1||rows.some(r=>r.id!==id))throw new LarkError('工作流ID查询结果不唯一或不匹配，请管理员核对',409);return rows[0]||null;}
  async readRows(){if(!this.lark)return this.db.prepare('SELECT data FROM collaboration_workflow').all().map(r=>JSON.parse(r.data));const path=await this.path(false);if(!path)return [];return this.decodeRows(await this.lark.list(path+'/records'));}
