@@ -70,7 +70,7 @@ function json(res,status,data){res.writeHead(status,{'Content-Type':'application
 const readRaw=async(options)=>{if(lark)return lark.read(options);const row=db.prepare('SELECT revision,state FROM workspace WHERE id=1').get();return {revision:row.revision,state:JSON.parse(row.state)}};
 const saveRaw=async(state,revision)=>{if(lark)return lark.saveInner(state,revision);const row=db.prepare('UPDATE workspace SET state=?,revision=revision+1 WHERE id=1 AND revision=? RETURNING revision').get(JSON.stringify(state),revision);if(!row)throw Object.assign(Error('资料已更新，请重新审核'),{status:409});return row;};
 let workflow;
-const getWorkflowState=async(options)=>{const [raw,rows]=await Promise.all([readRaw(options),options?.rows?Promise.resolve(options.rows):options?.rowsPromise||workflow.store.rows({coalesce:options?.coalesce===true})]);return {...raw,state:visibleState(raw.state,rows)}};
+const getWorkflowState=async(options)=>{const [raw,rows]=await Promise.all([readRaw(options),options?.rows?Promise.resolve(options.rows):options?.rowsPromise||workflow.store.rows({coalesce:options?.coalesce===true,browse:options?.browse===true,force:options?.force===true})]);return {...raw,state:visibleState(raw.state,rows)}};
 const saveWorkflowState=async(state,revision)=>{
  if(lark){let rows;const result=await lark.updateInner(revision,async raw=>{rows=await workflow.store.rows();checkActor(context.getStore()||{role:'system'},rows);const active=visibleState(raw.state,rows);checkOwnerChanges(context.getStore()||{role:'system'},active,state);const full=mergeVisible(state,raw.state,rows);validate(full);return full;});return {...result,state:visibleState(result.state,rows)};}
  const raw=await readRaw(),rows=await workflow.store.rows();if(raw.revision!==revision)throw Object.assign(Error('资料已更新，请刷新后重新提交'),{status:409});const active=visibleState(raw.state,rows);checkOwnerChanges(context.getStore()||{role:'system'},active,state);const full=mergeVisible(state,raw.state,rows);validate(full);const result=await saveRaw(full,revision);return {...result,state:state}};
@@ -130,8 +130,8 @@ const server=http.createServer(async(req,res)=>{
   if(actor.role==='viewer'){
    forbidden(req.method==='GET','查阅账号不能修改数据');forbidden(!['/api/workflow/export','/api/setup'].includes(url.pathname),'查阅账号不能导出数据或查看配置');
    if(url.pathname==='/api/state'){const raw=await getWorkflowState({coalesce:true,browse:true,force:url.searchParams.get('fresh')==='1'||req.headers['x-data-refresh']==='1'});json(res,200,{...raw,state:redactState(raw.state)});return;}
-   if(url.pathname==='/api/workflow'){const rows=await workflow.store.rows({coalesce:true});json(res,200,{ready:true,mail:await workflow.mail.status(rows),rows:readOnlyWorkflow(rows)});return;}
-   if(url.pathname.startsWith('/api/lifecycle')){const [rows,current]=await Promise.all([workflow.store.rows({coalesce:true}),getWorkflowState({coalesce:true,browse:true})]);const project=url.searchParams.get('project');json(res,200,readOnlyLifecycle(rows,current.state,project,lifecycle.settings(rows,project),lifecycle.reminders(current.state,rows,project)));return;}
+   if(url.pathname==='/api/workflow'){const rows=await workflow.store.rows({coalesce:true,browse:true,force:req.headers['x-data-refresh']==='1'});json(res,200,{ready:true,mail:await workflow.mail.status(rows),rows:readOnlyWorkflow(rows)});return;}
+   if(url.pathname.startsWith('/api/lifecycle')){const rowsPromise=workflow.store.rows({coalesce:true,browse:true,force:req.headers['x-data-refresh']==='1'}),[rows,current]=await Promise.all([rowsPromise,getWorkflowState({coalesce:true,browse:true,force:req.headers['x-data-refresh']==='1',rowsPromise})]);const project=url.searchParams.get('project');json(res,200,readOnlyLifecycle(rows,current.state,project,lifecycle.settings(rows,project),lifecycle.reminders(current.state,rows,project)));return;}
    forbidden(!url.pathname.startsWith('/api/mail/'),'查阅账号不能使用邮箱');
   }
   if(actor.role==='owner'){
