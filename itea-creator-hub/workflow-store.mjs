@@ -7,11 +7,12 @@ const scalar=v=>Array.isArray(v)?v.map(x=>x.text||'').join(''):String(v??'');
 export class WorkflowStore{
  constructor({lark,db,browseTtlMs=15000,now=Date.now}){this.lark=lark;this.db=db;this.queue=Promise.resolve();this.rowsEpoch=0;this.rowsFlight=null;this.browseTtlMs=browseTtlMs;this.now=now;this.browseCache=null;this.browseFlight=null;if(!lark)db.exec('CREATE TABLE IF NOT EXISTS collaboration_workflow (id TEXT PRIMARY KEY, data TEXT NOT NULL)');}
  async lock(fn){const owner=this.lark||this,key=this.lark?'writeQueue':'queue',previous=owner[key];let release;owner[key]=new Promise(r=>release=r);await previous;try{return await fn()}finally{release()}}
- async path(required=true){if(!this.lark)return '';if(this.tablePath)return this.tablePath;const root='/open-apis/bitable/v1/apps/'+encodeURIComponent(await this.lark.resolveBase()),matches=(await this.lark.list(root+'/tables',100)).filter(t=>t.name==='协作工作流');if(matches.length>1)throw new LarkError('Base中有重复的协作工作流表，请管理员核对',409);if(!matches.length){if(!required)return null;throw new LarkError('请先点击“启用邀约与报名”，准备 Lark 工作流表',409)}this.tablePath=root+'/tables/'+encodeURIComponent(matches[0].table_id);return this.tablePath;}
+ async path(required=true){if(!this.lark)return '';if(this.tablePath){this.lark.markWorkflowTable?.(this.tablePath);return this.tablePath;}const root='/open-apis/bitable/v1/apps/'+encodeURIComponent(await this.lark.resolveBase()),matches=(await this.lark.list(root+'/tables',100)).filter(t=>t.name==='协作工作流');if(matches.length>1)throw new LarkError('Base中有重复的协作工作流表，请管理员核对',409);if(!matches.length){if(!required)return null;throw new LarkError('请先点击“启用邀约与报名”，准备 Lark 工作流表',409)}this.tablePath=root+'/tables/'+encodeURIComponent(matches[0].table_id);this.lark.markWorkflowTable?.(this.tablePath);return this.tablePath;}
  async prepare(){return this.lock(async()=>{if(!this.lark)return {ready:true};let path=await this.path(false);if(!path){const root='/open-apis/bitable/v1/apps/'+encodeURIComponent(await this.lark.resolveBase());const d=await this.lark.request(root+'/tables',{method:'POST',body:{table:{name:'协作工作流',default_view_name:'全部记录',fields:fields.map(field_name=>({field_name,type:1}))}}});const id=d?.table_id||d?.table?.table_id;if(!id)throw new LarkError('创建工作流表结果未知，请刷新核查');path=root+'/tables/'+encodeURIComponent(id);}const existing=await this.lark.list(path+'/fields',200);for(const name of fields)if(!existing.some(f=>f.field_name===name))await this.lark.request(path+'/fields',{method:'POST',body:{field_name:name,type:1}});return {ready:true};});}
  async rows({coalesce=false,browse=false,force=false}={}){if(browse)return this.readBrowse({force});if(!coalesce)return this.readRows();let flight=this.rowsFlight;if(!flight||flight.epoch!==this.rowsEpoch){flight={epoch:this.rowsEpoch,promise:this.readRows()};this.rowsFlight=flight;}try{return structuredClone(await flight.promise)}finally{if(this.rowsFlight===flight)this.rowsFlight=null}}
 
  async readBrowse({force=false}={}){
+  if(force&&this.browseFlight?.epoch===this.rowsEpoch&&this.browseFlight.providerEpoch===(this.lark?.readEpoch||0))return structuredClone(await this.browseFlight.promise);
   if(force){this.rowsEpoch++;this.browseCache=null;}
   const epoch=this.rowsEpoch,providerEpoch=this.lark?.readEpoch||0,started=this.now(),matches=value=>value?.epoch===epoch&&value.providerEpoch===providerEpoch;
   if(!force&&matches(this.browseCache)&&this.browseCache.until>started)return structuredClone(this.browseCache.rows);
@@ -22,6 +23,25 @@ export class WorkflowStore{
   finally{if(this.browseFlight===flight)this.browseFlight=null;}
  }
 
+ async visibilityRows({force=false}={}){
+  const select=rows=>rows.filter(r=>r.kind==='trash'||r.kind==='creator-merge');
+  if(!this.lark||this.visibilityFiltersUnsupported)return select(await this.rows({coalesce:true,browse:true,force}));
+  if(force&&this.visibilityFlight?.epoch===this.rowsEpoch&&this.visibilityFlight.providerEpoch===(this.lark.readEpoch||0))return structuredClone(await this.visibilityFlight.promise);
+  if(force)this.rowsEpoch++;
+  const epoch=this.rowsEpoch,providerEpoch=this.lark.readEpoch||0,started=this.now(),valid=v=>v?.epoch===epoch&&v.providerEpoch===providerEpoch;
+  if(!force&&valid(this.browseCache)&&this.browseCache.until>started)return structuredClone(select(this.browseCache.rows));
+  if(!force&&valid(this.visibilityCache)&&this.visibilityCache.until>started)return structuredClone(this.visibilityCache.rows);
+  let flight=this.visibilityFlight;
+  if(force||!valid(flight)){
+   const promise=(async()=>{const path=await this.path(false);if(!path)return [];const filter='OR(CurrentValue.[数据].contains('+JSON.stringify('"trash"')+'),CurrentValue.[数据].contains('+JSON.stringify('"creator-merge"')+'))';
+    try{return select(this.decodeRows(await this.lark.list(path+'/records?filter='+encodeURIComponent(filter))));}
+    catch(e){if((e.status===400&&/Lark请求参数错误/.test(e.message))||/Lark接口失败（1254018）/.test(e.message)){this.visibilityFiltersUnsupported=true;return select(await this.rows({coalesce:true,browse:true,force}));}throw e;}
+   })();flight={epoch,providerEpoch,promise};this.visibilityFlight=flight;
+  }
+  try{const rows=await flight.promise;if(this.rowsEpoch===epoch&&(this.lark.readEpoch||0)===providerEpoch)this.visibilityCache={epoch,providerEpoch,rows:structuredClone(rows),until:started+this.browseTtlMs};return structuredClone(rows);}
+  catch(e){if(this.rowsEpoch===epoch)this.visibilityCache=null;throw e;}
+  finally{if(this.visibilityFlight===flight)this.visibilityFlight=null;}
+ }
  async invitationRows({project='',force=false}={}){
   if(typeof project!=='string'||project.length>80||/[\r\n]/.test(project))throw new LarkError('项目参数无效',400);
   const kinds=['invite','application','issue','issue-completion','report'],select=rows=>rows.filter(r=>r.id==='MAIL_AUTH'||kinds.includes(r.kind)&&(!project||r.project===project));

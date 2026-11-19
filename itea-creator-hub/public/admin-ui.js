@@ -37,6 +37,7 @@ for(const b of document.querySelectorAll('[data-edit-tags]')){const p=people.fin
 for(const b of document.querySelectorAll('[data-edit-person]')){const a=accounts.find(a=>a.id===b.dataset.editPerson),p=people.find(p=>p.id===a?.person);if(me.role==='viewer'||p?.owner!==me.owner)b.disabled=true;}
 if(me.role==='viewer'||me.role==='owner'&&!me.owner){for(const b of document.querySelectorAll('[data-tab="达人手动入库"],[data-tab="报名与Post录入"],[data-tab="批量导入"]'))b.hidden=true;const seed=$('seedButton');if(seed)seed.hidden=true;const prepare=$('prepareNewFields');if(prepare)prepare.hidden=true;}
 }
+function invalidateSession(message){me=null;identityError=message||'登录已失效，请重新登录';for(const box of document.querySelectorAll('.flow-modal'))box.remove();for(const id of ['adminOpen','accountAccess','prepareNewFields','roleWorkspace'])$(id)?.remove();}
 function refreshIdentity(){if(identityFlight)return identityFlight;identityError='';identityFlight=(async()=>{try{const value=await api('/api/me');if(!['admin','owner','viewer'].includes(value.role))throw Error('账号权限响应无效');me=value;}catch(err){me=null;identityError=err.message;}finally{identityFlight=null;setTimeout(()=>{if(typeof render==='function')render();},0);}})();return identityFlight;}
-root.AdminUI={mount,show,deletePost,refreshIdentity,identityError:()=>identityError,me:()=>me};void refreshIdentity();
+root.AdminUI={mount,show,deletePost,refreshIdentity,invalidateSession,identityError:()=>identityError,me:()=>me};void refreshIdentity();
 })(globalThis);

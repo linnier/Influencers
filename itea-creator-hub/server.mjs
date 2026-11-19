@@ -70,7 +70,7 @@ function json(res,status,data){res.writeHead(status,{'Content-Type':'application
 const readRaw=async(options)=>{if(lark)return lark.read(options);const row=db.prepare('SELECT revision,state FROM workspace WHERE id=1').get();return {revision:row.revision,state:JSON.parse(row.state)}};
 const saveRaw=async(state,revision)=>{if(lark)return lark.saveInner(state,revision);const row=db.prepare('UPDATE workspace SET state=?,revision=revision+1 WHERE id=1 AND revision=? RETURNING revision').get(JSON.stringify(state),revision);if(!row)throw Object.assign(Error('资料已更新，请重新审核'),{status:409});return row;};
 let workflow;
-const getWorkflowState=async(options)=>{const [raw,rows]=await Promise.all([readRaw(options),options?.rows?Promise.resolve(options.rows):options?.rowsPromise||workflow.store.rows({coalesce:options?.coalesce===true,browse:options?.browse===true,force:options?.force===true})]);return {...raw,state:visibleState(raw.state,rows)}};
+const getWorkflowState=async(options)=>{const [raw,rows]=await Promise.all([readRaw(options),options?.rows?Promise.resolve(options.rows):options?.rowsPromise||(options?.browse===true?workflow.store.visibilityRows({force:options?.force===true}):workflow.store.rows({coalesce:options?.coalesce===true}))]);return {...raw,state:visibleState(raw.state,rows)}};
 const saveWorkflowState=async(state,revision)=>{
  if(lark){let rows;const result=await lark.updateInner(revision,async raw=>{rows=await workflow.store.rows();checkActor(context.getStore()||{role:'system'},rows);const active=visibleState(raw.state,rows);checkOwnerChanges(context.getStore()||{role:'system'},active,state);const full=mergeVisible(state,raw.state,rows);validate(full);return full;});return {...result,state:visibleState(result.state,rows)};}
  const raw=await readRaw(),rows=await workflow.store.rows();if(raw.revision!==revision)throw Object.assign(Error('资料已更新，请刷新后重新提交'),{status:409});const active=visibleState(raw.state,rows);checkOwnerChanges(context.getStore()||{role:'system'},active,state);const full=mergeVisible(state,raw.state,rows);validate(full);const result=await saveRaw(full,revision);return {...result,state:state}};
@@ -90,6 +90,7 @@ const creatorMerge=createCreatorMerge({store:workflow.store,getState:getWorkflow
 const applicationCorrection=createApplicationCorrection({store:workflow.store,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,checkActor});
 const reminderTimer=process.env.DISABLE_AUTOMATIC_REMINDERS==='true'?null:setInterval(()=>void lifecycle.tick(),60000);reminderTimer?.unref();
 const server=http.createServer(async(req,res)=>{
+ const run=async()=>{
  try{
   if(mountRequest(req,res,appBase))return;
   const url=new URL(req.url,'http://'+req.headers.host);
@@ -174,6 +175,9 @@ const server=http.createServer(async(req,res)=>{
    const raw=await readRaw(),rows=await workflow.store.rows();checkActor(actor,rows);if(raw.revision!==payload.revision)throw Object.assign(Error('资料已更新，请刷新后重试'),{status:409});const visible=visibleState(raw.state,rows);if(Object.hasOwn(payload,'changes')){payload.state=StateChanges.apply(visible,payload.changes);validateView(payload.state);}checkOwnerChanges(actor,visible,payload.state);CooperationStatus.checkCompletionChanges(visible,payload.state,rows);const full=mergeVisible(payload.state,raw.state,rows);validate(full);if(url.pathname==='/api/import/check'){if(lark)json(res,200,await lark.preflight(full,payload.revision));else json(res,200,{ok:true});return;}const result=await saveRaw(full,payload.revision);json(res,200,{...result,state:visibleState(result.state||full,rows)});});
   });
  }catch(e){console.error('Request failed:',e.message);if(!res.headersSent)json(res,e.status||500,{error:e.status?e.message:'服务端错误，请稍后重试'});else res.end();}
+ };
+ const path=(req.url||'').split('?')[0],mainRead=req.method==='GET'&&['/','/api/state','/api/me','/api/connection',appBase+'/',appBase+'/api/state',appBase+'/api/me',appBase+'/api/connection'].includes(path);
+ await (lark&&mainRead?lark.withReadDeadline(run):run());
 });
 server.on('error',e=>{console.error(e.code==='EADDRINUSE'?'端口 '+port+' 已被占用，请停止原网站窗口后再启动，不要重复启动。':'网站启动失败：'+e.message);db.close();process.exit(1)});
 server.listen(port,host,()=>console.log('Creator Hub listening on http://'+host+':'+server.address().port));
