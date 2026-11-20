@@ -14,14 +14,15 @@ export function createBackupSource({lark,store,db,dataDir,build}){
    }catch(e){db.exec('ROLLBACK');throw e;}
   }else{
    source=await lark.withReadDeadline(async()=>{
-    const epoch=lark.readEpoch,workflowEpoch=store.rowsEpoch;if(lark.writeDepth)throw Error('资料正在保存，请稍后再备份');
+    // Cache epochs also change on read-only refreshes; only write markers affect this export.
+    const epoch=lark.mutationEpoch,workflowEpoch=store.writeEpoch;if(lark.mutationDepth||store.writeDepth)throw Error('资料正在保存，请稍后再备份');
     const business=await lark.snapshot();
     // Resolve the workflow table afresh, so removed/recreated tables cannot silently disappear.
     const tables=await lark.list(business.root+'/tables',100),matches=tables.filter(t=>t.name==='协作工作流');
     if(matches.length>1)throw Error('存在重名工作流表，备份已停止');
     let workflow={table:null,fields:[],records:[],rows:[]};
     if(matches.length){const table=matches[0],path=business.root+'/tables/'+encodeURIComponent(table.table_id);const fields=await lark.list(path+'/fields',200),records=await lark.list(path+'/records');workflow={table,fields,records,rows:store.decodeRows(records)};}
-    if(lark.writeDepth||epoch!==lark.readEpoch||workflowEpoch!==store.rowsEpoch)throw Error('备份期间资料有变化，请稍后重试');
+    if(lark.mutationDepth||store.writeDepth||epoch!==lark.mutationEpoch||workflowEpoch!==store.writeEpoch)throw Error('备份期间资料有变化，请稍后重试');
     return {backend:'lark',build,consistency:'Lark paginated export; local writes checked; external Lark edits are not transactionally isolated',business,workflow};
    });
   }
