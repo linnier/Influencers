@@ -1,6 +1,5 @@
-param([string]$ClientFile)
+param([string]$ClientFile, [string]$OutputFile)
 $ErrorActionPreference = 'Stop'
-Add-Type -AssemblyName System.Windows.Forms
 function Base64Url([byte[]]$Bytes) { return [Convert]::ToBase64String($Bytes).TrimEnd('=').Replace('+','-').Replace('/','_') }
 function RandomToken {
     $bytes = New-Object byte[] 32
@@ -12,15 +11,18 @@ function QueryString($Values) {
     return (($Values.GetEnumerator() | ForEach-Object { [Uri]::EscapeDataString([string]$_.Key) + '=' + [Uri]::EscapeDataString([string]$_.Value) }) -join '&')
 }
 $listener = $null
+$stage = 'select'
 try {
     if (!$ClientFile) {
+        Add-Type -AssemblyName System.Windows.Forms
         $picker = New-Object Windows.Forms.OpenFileDialog
         $picker.Title = 'Select Google Desktop OAuth client JSON (downloaded from Google Cloud)'
         $picker.Filter = 'Google client JSON (*.json)|*.json'
         if ($picker.ShowDialog() -ne 'OK') { throw 'Cancelled.' }
         $ClientFile = $picker.FileName
     }
-    $config = Get-Content -Raw -LiteralPath $ClientFile | ConvertFrom-Json
+    $resolvedClient = (Resolve-Path -LiteralPath $ClientFile).ProviderPath
+    $config = Get-Content -Raw -LiteralPath $resolvedClient | ConvertFrom-Json
     $client = $config.installed
     if (!$client.client_id -or !$client.client_secret -or !$client.client_id.EndsWith('.apps.googleusercontent.com')) { throw 'Please select a Desktop app OAuth client JSON from Google Cloud.' }
     $state = RandomToken
@@ -35,7 +37,8 @@ try {
         client_id=$client.client_id; redirect_uri=$redirect; response_type='code'; scope=$scope;
         access_type='offline'; prompt='consent'; state=$state; code_challenge=$challenge; code_challenge_method='S256'
     })
-    Write-Host 'Opening Google authorization. Sign in with your personal Google account.'
+    $stage = 'callback'
+    Write-Host 'Step 1/3: Opening Google authorization. Sign in with your personal Google account.'
     Start-Process $url
     $deadline = [DateTime]::UtcNow.AddMinutes(5)
     $code = $null
@@ -64,24 +67,53 @@ try {
         } finally { $socket.Dispose() }
     }
     if (!$code) { throw 'Authorization timed out after 5 minutes. Run the tool again.' }
+    $listener.Stop()
+    $listener = $null
+    $stage = 'token'
+    Write-Host 'Step 2/3: Google callback received. Connecting to Google token service (30-second request timeout)...'
     # Use fixed Google endpoints; never trust token_uri or auth_uri in the downloaded file.
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    $tokens = Invoke-RestMethod -Method Post -Uri 'https://oauth2.googleapis.com/token' -ContentType 'application/x-www-form-urlencoded' -Body @{
+    $tokens = Invoke-RestMethod -Method Post -Uri 'https://oauth2.googleapis.com/token' -TimeoutSec 30 -ContentType 'application/x-www-form-urlencoded' -Body @{
         client_id=$client.client_id; client_secret=$client.client_secret; grant_type='authorization_code';
         code=$code; code_verifier=$verifier; redirect_uri=$redirect
     }
-    if (!$tokens.refresh_token -or !($tokens.scope.Split(' ') -contains $scope)) { throw 'Google did not return persistent Drive permission. Run the tool again and grant access.' }
-    $save = New-Object Windows.Forms.SaveFileDialog
-    $save.Title = 'Save temporary itea connection file, then import it in System Management'
-    $save.Filter = 'JSON (*.json)|*.json'
-    $save.FileName = 'itea-google-drive-connection.json'
-    if ($save.ShowDialog() -ne 'OK') { throw 'Connection file was not saved.' }
+    $stage = 'permission'
+    if (!$tokens.refresh_token -or !$tokens.scope -or !($tokens.scope.Split(' ') -contains $scope)) { throw 'Google did not return persistent Drive permission. Run the tool again and grant access.' }
+    $stage = 'save'
+    Write-Host 'Step 3/3: Google credentials received. Saving the connection file...'
+    if ($OutputFile) {
+        $connectionPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputFile)
+    } else {
+        $connectionPath = Join-Path (Split-Path -Parent $resolvedClient) 'itea-google-drive-connection.json'
+        if (Test-Path -LiteralPath $connectionPath) {
+            $connectionPath = Join-Path (Split-Path -Parent $resolvedClient) ('itea-google-drive-connection-' + [Guid]::NewGuid().ToString('N').Substring(0,8) + '.json')
+        }
+    }
     $bundle = @{format='itea-google-drive-connection-v1'; clientId=$client.client_id; clientSecret=$client.client_secret; refreshToken=$tokens.refresh_token} | ConvertTo-Json
-    [IO.File]::WriteAllText($save.FileName, $bundle, [Text.UTF8Encoding]::new($false))
+    $bytes = [Text.UTF8Encoding]::new($false).GetBytes($bundle)
+    $file = [IO.File]::Open($connectionPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try { $file.Write($bytes, 0, $bytes.Length) } finally { $file.Dispose() }
     Write-Host 'Saved. Import this file in itea System Management > Data backup.'
+    Write-Host $connectionPath
     Write-Host 'The file contains authorization credentials. Do not send it in chat. Delete it after import.'
 } catch {
     # Provider exceptions may include authorization request details. Print no raw response bodies.
-    Write-Host 'Authorization did not finish. Check the selected Desktop client, Google consent settings and network, then retry.' -ForegroundColor Red
+    if ($stage -eq 'token') {
+        $status = $null
+        try { if ($_.Exception.Response) { $status = [int]$_.Exception.Response.StatusCode } } catch {}
+        if ($status -and $status -ge 400 -and $status -le 599) {
+            Write-Host ('Google token request failed (HTTP ' + $status + '). Check the Desktop client and Google consent, then run the tool again.') -ForegroundColor Red
+        } else {
+            Write-Host 'Google token connection failed or timed out. Check that this computer can reach oauth2.googleapis.com; browser access alone is not enough. Check your network/proxy, then run the tool again.' -ForegroundColor Red
+        }
+    } elseif ($stage -eq 'permission') {
+        Write-Host 'Google did not return persistent Drive permission. Run the tool again and grant the requested Drive access.' -ForegroundColor Red
+    } elseif ($stage -eq 'save') {
+        Write-Host 'Connection file could not be saved. Check folder write access or use -OutputFile with a new file path, then authorize again. Existing files are never overwritten.' -ForegroundColor Red
+    } elseif ($stage -eq 'callback') {
+        Write-Host 'Google callback was not completed. Check browser authorization and run the tool again within 5 minutes.' -ForegroundColor Red
+    } else {
+        Write-Host 'Could not read a Google Desktop client JSON. Select the client_secret JSON downloaded from Google Cloud, then retry.' -ForegroundColor Red
+    }
     exit 1
 } finally { if ($listener) { $listener.Stop() } }
