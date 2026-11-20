@@ -7,7 +7,7 @@ import {createDiscovery} from './discovery-core.mjs';
 import './public/finance.js';
 import './public/project-report-core.js';
 import {basePath,mountRequest} from './app-mount.mjs';
-import {prepareAsset,sendPrepared} from './http-assets.mjs';
+import {prepareAsset,sendPrepared,sendJSON} from './http-assets.mjs';
 import http from 'node:http';
 import {AsyncLocalStorage} from 'node:async_hooks';
 import {Readable} from 'node:stream';
@@ -67,11 +67,12 @@ function validate(s,{view=false}={}){
  for(const c of s.collabs)requireThat(c.agreedPrice==null||typeof c.agreedPrice==='number'&&Number.isFinite(c.agreedPrice)&&c.agreedPrice>=0,'约定合作费用不合法');
  if(!view)for(const c of s.collabs)requireThat(c.stage!=='已完成'||s.posts.filter(p=>p.collab===c.id).length>=c.target,'完成合作的发布数量不足');
 }
-function json(res,status,data){res.writeHead(status,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(data));}
+function json(res,status,data){sendJSON(res.req,res,status,data);}
 const readRaw=async(options)=>{if(lark)return lark.read(options);const row=db.prepare('SELECT revision,state FROM workspace WHERE id=1').get();return {revision:row.revision,state:JSON.parse(row.state)}};
 const saveRaw=async(state,revision)=>{if(lark)return lark.saveInner(state,revision);const row=db.prepare('UPDATE workspace SET state=?,revision=revision+1 WHERE id=1 AND revision=? RETURNING revision').get(JSON.stringify(state),revision);if(!row)throw Object.assign(Error('资料已更新，请重新审核'),{status:409});return row;};
 let workflow;
-const getWorkflowState=async(options)=>{const [raw,rows]=await Promise.all([readRaw(options),options?.rows?Promise.resolve(options.rows):options?.rowsPromise||(options?.browse===true?workflow.store.visibilityRows({force:options?.force===true}):workflow.store.rows({coalesce:options?.coalesce===true}))]);return {...raw,state:visibleState(raw.state,rows)}};
+const timeRead=async(label,read)=>{const start=Date.now();try{return await read;}finally{const timings=context.getStore()?.requestTimings;if(timings)timings[label]=(timings[label]||0)+Date.now()-start;}};
+const getWorkflowState=async(options)=>{const [raw,rows]=await Promise.all([timeRead('businessMs',readRaw(options)),timeRead('workflowMs',options?.rows?Promise.resolve(options.rows):options?.rowsPromise||(options?.browse===true?workflow.store.visibilityRows({force:options?.force===true}):workflow.store.rows({coalesce:options?.coalesce===true})))]);return {...raw,state:visibleState(raw.state,rows)}};
 const saveWorkflowState=async(state,revision)=>{
  if(lark){let rows;const result=await lark.updateInner(revision,async raw=>{rows=await workflow.store.rows();checkActor(context.getStore()||{role:'system'},rows);const active=visibleState(raw.state,rows);checkOwnerChanges(context.getStore()||{role:'system'},active,state);const full=mergeVisible(state,raw.state,rows);validate(full);return full;});return {...result,state:visibleState(result.state,rows)};}
  const raw=await readRaw(),rows=await workflow.store.rows();if(raw.revision!==revision)throw Object.assign(Error('资料已更新，请刷新后重新提交'),{status:409});const active=visibleState(raw.state,rows);checkOwnerChanges(context.getStore()||{role:'system'},active,state);const full=mergeVisible(state,raw.state,rows);validate(full);const result=await saveRaw(full,revision);return {...result,state:state}};
@@ -98,6 +99,9 @@ const creatorMerge=createCreatorMerge({store:workflow.store,getState:getWorkflow
 const applicationCorrection=createApplicationCorrection({store:workflow.store,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,checkActor});
 const reminderTimer=process.env.DISABLE_AUTOMATIC_REMINDERS==='true'?null:setInterval(()=>void lifecycle.tick(),60000);reminderTimer?.unref();
 const server=http.createServer(async(req,res)=>{
+ const requestStarted=Date.now(),requestTimings={},rawPath=(req.url||'').split('?')[0],timingRoute=appBase&&rawPath.startsWith(appBase+'/')?rawPath.slice(appBase.length):rawPath;
+ const measured=['/api/state','/api/me','/api/admin','/api/workflow','/api/lifecycle','/api/discovery','/api/discovery/bind-preview','/api/discovery/bind-candidates','/api/discovery/bind'].includes(timingRoute);
+ if(measured){let logged=false;const report=outcome=>{if(logged)return;logged=true;const elapsedMs=Date.now()-requestStarted;if(elapsedMs>=8000||res.statusCode>=500||outcome==='closed')console.info(JSON.stringify({event:'request_timing',method:req.method,route:timingRoute,status:res.statusCode,outcome,elapsedMs,...requestTimings,...(res.jsonMetrics||{})}));};res.once('finish',()=>report('finished'));res.once('close',()=>{if(!res.writableFinished)report('closed');});}
  const run=async()=>{
  try{
   if(mountRequest(req,res,appBase))return;
@@ -113,9 +117,9 @@ const server=http.createServer(async(req,res)=>{
   if(!auth.session(req)&&!(url.pathname.startsWith('/api/')&&auth.basic(req))){if(req.method==='GET'&&url.pathname==='/')redirect(res,'/login');else json(res,401,{error:'登录已过期，请重新登录'});return;}
   // Scripts contain no account data. A valid signed session can load them without scanning workflow rows for every asset; APIs still revalidate the principal.
   if(req.method==='GET'&&assets.has(url.pathname)){sendPrepared(req,res,assets.get(url.pathname),{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return}
-  const session=auth.session(req),actor=await accountsManager.principal(session||{v:1,user:'team'});
+  const session=auth.session(req),identityStarted=Date.now();let actor;try{actor=await accountsManager.principal(session||{v:1,user:'team'});}finally{requestTimings.identityMs=Date.now()-identityStarted;}
   if(!actor){res.setHeader('Set-Cookie','itea_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');json(res,401,{error:'账号已停用或权限已变化，请重新登录'});return;}
-  await context.run(actor,async()=>{
+  await context.run({...actor,requestTimings},async()=>{
   let payload;
   if(req.method==='POST'&&url.pathname.startsWith('/api/')){forbidden(new URL(req.headers.origin||'https://invalid').host===req.headers.host,'禁止跨站修改');let bytes=0;const chunks=[];for await(const chunk of req){bytes+=chunk.length;forbidden(bytes<=2*1024*1024,'请求过长');chunks.push(chunk);}const buffer=Buffer.concat(chunks);try{payload=JSON.parse(buffer.toString())}catch{throw Object.assign(Error('请求格式错误'),{status:400})}req[Symbol.asyncIterator]=()=>Readable.from([buffer])[Symbol.asyncIterator]();}
   if(url.pathname==='/discovery-helper.zip'){forbidden(actor.role==='admin'||actor.role==='owner','查阅账号不能使用资料卡采集助手');if(req.method!=='GET'){json(res,405,{error:'不支持该请求'});return;}sendPrepared(req,res,discoveryHelper,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename=itea-profile-card-helper.zip','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return;}

@@ -6,21 +6,22 @@ const scalar=v=>Array.isArray(v)?v.map(x=>x.text||'').join(''):String(v??'');
 // The encrypted mailbox authorization record is never returned by the HTTP API.
 export class WorkflowStore{
  constructor({lark,db,browseTtlMs=15000,now=Date.now}){this.lark=lark;this.db=db;this.queue=Promise.resolve();this.rowsEpoch=0;this.rowsFlight=null;this.browseTtlMs=browseTtlMs;this.now=now;this.browseCache=null;this.browseFlight=null;if(!lark)db.exec('CREATE TABLE IF NOT EXISTS collaboration_workflow (id TEXT PRIMARY KEY, data TEXT NOT NULL)');}
+ observeRead(promise){return this.lark?.observeRead?this.lark.observeRead(promise):promise;}
  async lock(fn){const owner=this.lark||this,key=this.lark?'writeQueue':'queue',previous=owner[key];let release;owner[key]=new Promise(r=>release=r);await previous;try{return await fn()}finally{release()}}
  async path(required=true){if(!this.lark)return '';if(this.tablePath){this.lark.markWorkflowTable?.(this.tablePath);return this.tablePath;}const root='/open-apis/bitable/v1/apps/'+encodeURIComponent(await this.lark.resolveBase()),matches=(await this.lark.list(root+'/tables',100)).filter(t=>t.name==='协作工作流');if(matches.length>1)throw new LarkError('Base中有重复的协作工作流表，请管理员核对',409);if(!matches.length){if(!required)return null;throw new LarkError('请先点击“启用邀约与报名”，准备 Lark 工作流表',409)}this.tablePath=root+'/tables/'+encodeURIComponent(matches[0].table_id);this.lark.markWorkflowTable?.(this.tablePath);return this.tablePath;}
  async prepare(){return this.lock(async()=>{if(!this.lark)return {ready:true};let path=await this.path(false);if(!path){const root='/open-apis/bitable/v1/apps/'+encodeURIComponent(await this.lark.resolveBase());const d=await this.lark.request(root+'/tables',{method:'POST',body:{table:{name:'协作工作流',default_view_name:'全部记录',fields:fields.map(field_name=>({field_name,type:1}))}}});const id=d?.table_id||d?.table?.table_id;if(!id)throw new LarkError('创建工作流表结果未知，请刷新核查');path=root+'/tables/'+encodeURIComponent(id);}const existing=await this.lark.list(path+'/fields',200);for(const name of fields)if(!existing.some(f=>f.field_name===name))await this.lark.request(path+'/fields',{method:'POST',body:{field_name:name,type:1}});return {ready:true};});}
- async rows({coalesce=false,browse=false,force=false}={}){if(browse)return this.readBrowse({force});if(!coalesce)return this.readRows();let flight=this.rowsFlight;if(!flight||flight.epoch!==this.rowsEpoch){flight={epoch:this.rowsEpoch,promise:this.readRows()};this.rowsFlight=flight;}try{return structuredClone(await flight.promise)}finally{if(this.rowsFlight===flight)this.rowsFlight=null}}
+ async rows({coalesce=false,browse=false,force=false}={}){if(browse)return this.readBrowse({force});if(!coalesce)return this.readRows();let flight=this.rowsFlight,ownsFlight=false;if(!flight||flight.epoch!==this.rowsEpoch){flight={epoch:this.rowsEpoch,promise:this.readRows()};this.rowsFlight=flight;ownsFlight=true;}try{return structuredClone(await this.observeRead(flight.promise))}finally{if(ownsFlight&&this.rowsFlight===flight)this.rowsFlight=null}}
 
  async readBrowse({force=false}={}){
-  if(force&&this.browseFlight?.epoch===this.rowsEpoch&&this.browseFlight.providerEpoch===(this.lark?.readEpoch||0))return structuredClone(await this.browseFlight.promise);
+  if(force&&this.browseFlight?.epoch===this.rowsEpoch&&this.browseFlight.providerEpoch===(this.lark?.readEpoch||0))return structuredClone(await this.observeRead(this.browseFlight.promise));
   if(force){this.rowsEpoch++;this.browseCache=null;}
   const epoch=this.rowsEpoch,providerEpoch=this.lark?.readEpoch||0,started=this.now(),matches=value=>value?.epoch===epoch&&value.providerEpoch===providerEpoch;
   if(!force&&matches(this.browseCache)&&this.browseCache.until>started)return structuredClone(this.browseCache.rows);
-  let flight=this.browseFlight;
-  if(force||!matches(flight)){flight={epoch,providerEpoch,promise:this.rows({coalesce:true})};this.browseFlight=flight;}
-  try{const rows=await flight.promise;if(this.rowsEpoch===epoch&&(this.lark?.readEpoch||0)===providerEpoch)this.browseCache={epoch,providerEpoch,rows:structuredClone(rows),until:started+this.browseTtlMs};return structuredClone(rows);}
-  catch(e){if(this.rowsEpoch===epoch)this.browseCache=null;throw e;}
-  finally{if(this.browseFlight===flight)this.browseFlight=null;}
+  let flight=this.browseFlight,ownsFlight=false;
+  if(force||!matches(flight)){flight={epoch,providerEpoch,promise:this.rows({coalesce:true})};this.browseFlight=flight;ownsFlight=true;}
+  try{const rows=await this.observeRead(flight.promise);if(this.rowsEpoch===epoch&&(this.lark?.readEpoch||0)===providerEpoch)this.browseCache={epoch,providerEpoch,rows:structuredClone(rows),until:this.now()+this.browseTtlMs};return structuredClone(rows);}
+  catch(e){if(ownsFlight&&this.rowsEpoch===epoch)this.browseCache=null;throw e;}
+  finally{if(ownsFlight&&this.browseFlight===flight)this.browseFlight=null;}
  }
 
  async visibilityRows({force=false}={}){
@@ -31,25 +32,32 @@ export class WorkflowStore{
   const epoch=this.rowsEpoch,providerEpoch=this.lark.readEpoch||0,started=this.now(),valid=v=>v?.epoch===epoch&&v.providerEpoch===providerEpoch;
   if(!force&&valid(this.browseCache)&&this.browseCache.until>started)return structuredClone(select(this.browseCache.rows));
   if(!force&&valid(this.visibilityCache)&&this.visibilityCache.until>started)return structuredClone(this.visibilityCache.rows);
-  let flight=this.visibilityFlight;
+  let flight=this.visibilityFlight,ownsFlight=false;
   if(force||!valid(flight)){
    const promise=(async()=>{const path=await this.path(false);if(!path)return [];const filter='OR(CurrentValue.[数据].contains('+JSON.stringify('"trash"')+'),CurrentValue.[数据].contains('+JSON.stringify('"creator-merge"')+'))';
     try{return select(this.decodeRows(await this.lark.list(path+'/records?filter='+encodeURIComponent(filter))));}
     catch(e){if((e.status===400&&/Lark请求参数错误/.test(e.message))||/Lark接口失败（1254018）/.test(e.message)){this.visibilityFiltersUnsupported=true;return select(await this.rows({coalesce:true,browse:true,force}));}throw e;}
-   })();flight={epoch,providerEpoch,promise};this.visibilityFlight=flight;
+   })();flight={epoch,providerEpoch,promise};this.visibilityFlight=flight;ownsFlight=true;
   }
-  try{const rows=await flight.promise;if(this.rowsEpoch===epoch&&(this.lark.readEpoch||0)===providerEpoch)this.visibilityCache={epoch,providerEpoch,rows:structuredClone(rows),until:started+this.browseTtlMs};return structuredClone(rows);}
-  catch(e){if(this.rowsEpoch===epoch)this.visibilityCache=null;throw e;}
-  finally{if(this.visibilityFlight===flight)this.visibilityFlight=null;}
+  try{const rows=await this.observeRead(flight.promise);if(this.rowsEpoch===epoch&&(this.lark.readEpoch||0)===providerEpoch)this.visibilityCache={epoch,providerEpoch,rows:structuredClone(rows),until:this.now()+this.browseTtlMs};return structuredClone(rows);}
+  catch(e){if(ownsFlight&&this.rowsEpoch===epoch)this.visibilityCache=null;throw e;}
+  finally{if(ownsFlight&&this.visibilityFlight===flight)this.visibilityFlight=null;}
+ }
+ async reminderSettingsRows(){
+  const select=rows=>rows.filter(r=>r.kind==='settings');
+  if(!this.lark||this.settingsFiltersUnsupported)return select(await this.rows({coalesce:true}));
+  const path=await this.path(false);if(!path)return [];const filter='CurrentValue.[数据].contains('+JSON.stringify('"settings"')+')';
+  try{return select(this.decodeRows(await this.lark.list(path+'/records?filter='+encodeURIComponent(filter))));}
+  catch(e){if((e.status===400&&/Lark请求参数错误/.test(e.message))||/Lark接口失败（1254018）/.test(e.message)){this.settingsFiltersUnsupported=true;return select(await this.rows({coalesce:true}));}throw e;}
  }
  async managementRows(){
   const kinds=['user','trash','management-audit','builtin-account-policy'],select=rows=>rows.filter(r=>kinds.includes(r.kind));
   if(!this.lark||this.managementFiltersUnsupported)return select(await this.rows({coalesce:true}));
-  const epoch=this.rowsEpoch,providerEpoch=this.lark.readEpoch||0;let flight=this.managementFlight;
+  const epoch=this.rowsEpoch,providerEpoch=this.lark.readEpoch||0;let flight=this.managementFlight,ownsFlight=false;
   if(!flight||flight.epoch!==epoch||flight.providerEpoch!==providerEpoch){
-   const promise=(async()=>{const path=await this.path(false);if(!path)return [];const filter='OR('+kinds.map(kind=>'CurrentValue.[数据].contains('+JSON.stringify(JSON.stringify(kind))+')').join(',')+')';try{return select(this.decodeRows(await this.lark.list(path+'/records?filter='+encodeURIComponent(filter))));}catch(e){if((e.status===400&&/Lark请求参数错误/.test(e.message))||/Lark接口失败（1254018）/.test(e.message)){this.managementFiltersUnsupported=true;return select(await this.rows({coalesce:true}));}throw e;}})();flight={epoch,providerEpoch,promise};this.managementFlight=flight;
+   const promise=(async()=>{const path=await this.path(false);if(!path)return [];const filter='OR('+kinds.map(kind=>'CurrentValue.[数据].contains('+JSON.stringify(JSON.stringify(kind))+')').join(',')+')';try{return select(this.decodeRows(await this.lark.list(path+'/records?filter='+encodeURIComponent(filter))));}catch(e){if((e.status===400&&/Lark请求参数错误/.test(e.message))||/Lark接口失败（1254018）/.test(e.message)){this.managementFiltersUnsupported=true;return select(await this.rows({coalesce:true}));}throw e;}})();flight={epoch,providerEpoch,promise};this.managementFlight=flight;ownsFlight=true;
   }
-  try{return structuredClone(await flight.promise);}finally{if(this.managementFlight===flight)this.managementFlight=null;}
+  try{return structuredClone(await this.observeRead(flight.promise));}finally{if(ownsFlight&&this.managementFlight===flight)this.managementFlight=null;}
  }
  async invitationRows({project='',force=false}={}){
   if(typeof project!=='string'||project.length>80||/[\r\n]/.test(project))throw new LarkError('项目参数无效',400);
@@ -60,17 +68,17 @@ export class WorkflowStore{
   const epoch=this.rowsEpoch,providerEpoch=this.lark.readEpoch||0,started=this.now(),valid=v=>v?.epoch===epoch&&v.providerEpoch===providerEpoch;
   if(!force&&valid(this.browseCache)&&this.browseCache.until>started)return structuredClone(select(this.browseCache.rows));
   const cached=this.invitationCache.get(project);if(!force&&valid(cached)&&cached.until>started)return structuredClone(cached.rows);
-  let flight=this.invitationFlights.get(project);
+  let flight=this.invitationFlights.get(project),ownsFlight=false;
   if(force||!valid(flight)){
    const promise=(async()=>{const path=await this.path(false);if(!path)return [];
     const contains=value=>'CurrentValue.[数据].contains('+JSON.stringify(value)+')',kindFilter='OR('+kinds.map(kind=>contains(JSON.stringify(kind))).join(',')+')',filter='OR(CurrentValue.[工作流ID] = "MAIL_AUTH",'+(project?'AND('+kindFilter+','+contains(JSON.stringify(project))+')':kindFilter)+')';
     try{return select(this.decodeRows(await this.lark.list(path+'/records?filter='+encodeURIComponent(filter))));}
     catch(e){if((e.status===400&&/Lark请求参数错误/.test(e.message))||/Lark接口失败（1254018）/.test(e.message)){this.invitationFiltersUnsupported=true;return select(await this.rows({coalesce:true,browse:true,force}));}throw e;}
-   })();flight={epoch,providerEpoch,promise};this.invitationFlights.set(project,flight);
+   })();flight={epoch,providerEpoch,promise};this.invitationFlights.set(project,flight);ownsFlight=true;
   }
-  try{const rows=await flight.promise;if(this.rowsEpoch===epoch&&(this.lark.readEpoch||0)===providerEpoch){if(this.invitationCache.size>=50&&!this.invitationCache.has(project))this.invitationCache.delete(this.invitationCache.keys().next().value);this.invitationCache.set(project,{epoch,providerEpoch,rows:structuredClone(rows),until:started+this.browseTtlMs});}return structuredClone(rows);}
-  catch(e){if(this.rowsEpoch===epoch)this.invitationCache.delete(project);throw e;}
-  finally{if(this.invitationFlights.get(project)===flight)this.invitationFlights.delete(project);}
+  try{const rows=await this.observeRead(flight.promise);if(this.rowsEpoch===epoch&&(this.lark.readEpoch||0)===providerEpoch){if(this.invitationCache.size>=50&&!this.invitationCache.has(project))this.invitationCache.delete(this.invitationCache.keys().next().value);this.invitationCache.set(project,{epoch,providerEpoch,rows:structuredClone(rows),until:this.now()+this.browseTtlMs});}return structuredClone(rows);}
+  catch(e){if(ownsFlight&&this.rowsEpoch===epoch)this.invitationCache.delete(project);throw e;}
+  finally{if(ownsFlight&&this.invitationFlights.get(project)===flight)this.invitationFlights.delete(project);}
  }
  decodeRows(records){return records.map(r=>{try{if(!scalar(r.fields?.['工作流ID']).trim()&&!scalar(r.fields?.['数据']).trim())return null;const data=JSON.parse(scalar(r.fields['数据']));if(data.id!==scalar(r.fields['工作流ID']))throw Error();return {...data,_record:r.record_id}}catch{throw new LarkError('协作工作流中有无法识别的记录，请管理员核对',409)}}).filter(Boolean);}
  async get(id){if(typeof id!=='string'||!id||id.length>200)throw new LarkError('工作流ID无效',400);if(!this.lark){const row=this.db.prepare('SELECT data FROM collaboration_workflow WHERE id=?').get(id);if(!row)return null;const data=JSON.parse(row.data);if(data.id!==id)throw new LarkError('工作流ID查询结果不匹配',409);return data;}const path=await this.path(false);if(!path)return null;if(this.targetedReadsUnsupported){const matches=(await this.rows()).filter(r=>r.id===id);if(matches.length>1)throw new LarkError('工作流ID重复，请管理员核对',409);return matches[0]||null;}const filter='CurrentValue.[工作流ID] = '+JSON.stringify(id);let records;try{records=await this.lark.list(path+'/records?filter='+encodeURIComponent(filter),2);}catch(e){if(e.status===400&&/Lark请求参数错误/.test(e.message)){this.targetedReadsUnsupported=true;return this.get(id);}throw e;}const rows=this.decodeRows(records);if(rows.length>1||rows.some(r=>r.id!==id))throw new LarkError('工作流ID查询结果不唯一或不匹配，请管理员核对',409);return rows[0]||null;}
