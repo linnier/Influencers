@@ -178,7 +178,7 @@ const server=http.createServer(async(req,res)=>{
   });
  }catch(e){console.error('Request failed:',e.message);if(!res.headersSent)json(res,e.status||500,{error:e.status?e.message:'服务端错误，请稍后重试'});else res.end();}
  };
- const path=(req.url||'').split('?')[0],mainRead=req.method==='GET'&&['/','/api/state','/api/me','/api/connection',appBase+'/',appBase+'/api/state',appBase+'/api/me',appBase+'/api/connection'].includes(path);
+ const path=(req.url||'').split('?')[0],mainRead=req.method==='GET'&&['/','/api/state','/api/me','/api/connection','/api/admin',appBase+'/',appBase+'/api/state',appBase+'/api/me',appBase+'/api/connection',appBase+'/api/admin'].includes(path);
  await (lark&&mainRead?lark.withReadDeadline(run):run());
 });
 server.on('error',e=>{console.error(e.code==='EADDRINUSE'?'端口 '+port+' 已被占用，请停止原网站窗口后再启动，不要重复启动。':'网站启动失败：'+e.message);db.close();process.exit(1)});

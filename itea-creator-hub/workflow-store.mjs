@@ -42,6 +42,15 @@ export class WorkflowStore{
   catch(e){if(this.rowsEpoch===epoch)this.visibilityCache=null;throw e;}
   finally{if(this.visibilityFlight===flight)this.visibilityFlight=null;}
  }
+ async managementRows(){
+  const kinds=['user','trash','management-audit','builtin-account-policy'],select=rows=>rows.filter(r=>kinds.includes(r.kind));
+  if(!this.lark||this.managementFiltersUnsupported)return select(await this.rows({coalesce:true}));
+  const epoch=this.rowsEpoch,providerEpoch=this.lark.readEpoch||0;let flight=this.managementFlight;
+  if(!flight||flight.epoch!==epoch||flight.providerEpoch!==providerEpoch){
+   const promise=(async()=>{const path=await this.path(false);if(!path)return [];const filter='OR('+kinds.map(kind=>'CurrentValue.[数据].contains('+JSON.stringify(JSON.stringify(kind))+')').join(',')+')';try{return select(this.decodeRows(await this.lark.list(path+'/records?filter='+encodeURIComponent(filter))));}catch(e){if((e.status===400&&/Lark请求参数错误/.test(e.message))||/Lark接口失败（1254018）/.test(e.message)){this.managementFiltersUnsupported=true;return select(await this.rows({coalesce:true}));}throw e;}})();flight={epoch,providerEpoch,promise};this.managementFlight=flight;
+  }
+  try{return structuredClone(await flight.promise);}finally{if(this.managementFlight===flight)this.managementFlight=null;}
+ }
  async invitationRows({project='',force=false}={}){
   if(typeof project!=='string'||project.length>80||/[\r\n]/.test(project))throw new LarkError('项目参数无效',400);
   const kinds=['invite','application','issue','issue-completion','report'],select=rows=>rows.filter(r=>r.id==='MAIL_AUTH'||kinds.includes(r.kind)&&(!project||r.project===project));
