@@ -87,7 +87,13 @@ const lifecycle=createLifecycle({reviewer:()=>context.getStore()?.username||'tea
 hooks.authorize=authorizeCurrent;hooks.confirmed=lifecycle.confirmed;hooks.issued=lifecycle.issued;
 const searchService=createSearchProvider({store:workflow.store,checkActor,secret:process.env.LARK_APP_SECRET||password,envKey:process.env.BRAVE_SEARCH_API_KEY||''});
 const getCandidateDirectory=async({rowsPromise}={})=>{const [raw,rows]=await Promise.all([lark?lark.readDirectory():readRaw({coalesce:true,browse:true}),rowsPromise||workflow.store.rows({coalesce:true})]);return {...raw,state:visibleState(raw.state,rows)}};
-const discovery=createDiscovery({getCandidatesState:getCandidateDirectory,store:workflow.store,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,checkActor,searchService});
+const updateDiscoveryBinding=async(expectedRevision,build)=>{
+ const actor=context.getStore();
+ const propose=async raw=>{const proposed=await build(raw);checkActor(actor,proposed.rows);const before=visibleState(raw.state,proposed.rows);checkOwnerChanges(actor,before,proposed.state);const full=mergeVisible(proposed.state,raw.state,proposed.rows);validate(full);return full;};
+ if(lark)return lark.updateInner(expectedRevision,propose);
+ const raw=await readRaw();if(String(raw.revision)!==String(expectedRevision))throw Object.assign(Error('达人库已更新，请重新核对绑定预览'),{status:409});const full=await propose(raw),saved=await saveRaw(full,raw.revision);return {...saved,state:full};
+};
+const discovery=createDiscovery({getCandidatesState:getCandidateDirectory,store:workflow.store,getState:getWorkflowState,saveState:saveWorkflowState,updateBindingState:updateDiscoveryBinding,validate:validateView,checkActor,searchService});
 const creatorMerge=createCreatorMerge({store:workflow.store,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,checkActor});
 const applicationCorrection=createApplicationCorrection({store:workflow.store,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,checkActor});
 const reminderTimer=process.env.DISABLE_AUTOMATIC_REMINDERS==='true'?null:setInterval(()=>void lifecycle.tick(),60000);reminderTimer?.unref();
