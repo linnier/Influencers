@@ -1,5 +1,5 @@
 (function(root){'use strict';
-const HELPER_VERSION='1.5.3';
+const HELPER_VERSION='1.5.4';
 const $=id=>document.getElementById(id),E=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));let lastCollection=null,records=[],loaded=false,error='',flight=null,pending=false,selected=new Set(),savedOnly=false,mode='saved',searchConfig=null,onlineIds=null,reviewFollowers=false,searchSummary='',filter={q:'',platform:'',region:'',source:'',fans:'all',min:'',max:''};
 const tagValue=r=>root.CreatorTags.join([r?.category||'',r?.tags||'']);
 let libraryView='out',page=1,pageSize=10;
