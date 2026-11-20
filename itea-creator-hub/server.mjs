@@ -1,5 +1,7 @@
 import {createAdministratorAccess,checkBootstrapAccess} from './admin-transition.mjs';
 import {createMailImages} from './mail-images.mjs';
+import {createBackups} from './backup.mjs';
+import {createBackupSource} from './backup-source.mjs';
 import {createApplicationCorrection} from './application-correction.mjs';
 import {createCreatorMerge} from './creator-merge.mjs';
 import {createSearchProvider} from './discovery-search.mjs';
@@ -42,7 +44,7 @@ const discoveryHelper=prepareAsset(readFileSync(resolve(root,'public/discovery-h
 const reportHTML=prepareAsset(readFileSync(resolve(root,'public/project-report.html')));
 const html=prepareAsset(readFileSync(resolve(root,'public/index.html'))),loginHTML=prepareAsset(readFileSync(resolve(root,'public/login.html'))),loginJS=prepareAsset(readFileSync(resolve(root,'public/login.js')));
 function redirect(res,to){res.writeHead(303,{'Location':to,'Cache-Control':'no-store'});res.end();}
-const assets=new Map(['/creator-discovery.js','/project-report-core.js','/project-report-excel.js','/project-report-ui.js','/cooperation-status.js','/creator-tags.js','/state-changes.js','/mail-templates.js','/mail-design.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,prepareAsset(readFileSync(resolve(root,'public'+path)))]));
+const assets=new Map(['/backup-ui.js','/creator-discovery.js','/project-report-core.js','/project-report-excel.js','/project-report-ui.js','/cooperation-status.js','/creator-tags.js','/state-changes.js','/mail-templates.js','/mail-design.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,prepareAsset(readFileSync(resolve(root,'public'+path)))]));
 const stages=['已报名','筛选中','沟通中','已确认合作','执行中','已完成','未选中','已取消'];
 function requireThat(ok,msg){if(!ok)throw Object.assign(Error(msg),{status:400})}
 function text(v,max=160){return typeof v==='string'&&v.length<=max}
@@ -84,6 +86,8 @@ workflow=createWorkflow({images:mailImages,lark,db,auth,validate:validateView,ge
 const administratorAccess=createAdministratorAccess({store:workflow.store});
 accountsManager=createAccounts({store:workflow.store,administratorAccess});
 const management=createAdminManagement({store:workflow.store,accounts:accountsManager,readRaw,saveRaw,validate,checkActor,administratorAccess});
+let backups;try{backups=createBackups({dataDir,collect:createBackupSource({lark,store:workflow.store,db,dataDir,build:JSON.parse(readFileSync(resolve(root,'package.json'),'utf8')).version})});}
+catch{console.error('Backup initialization failed: check backup directory permissions; business service remains available');backups={close(){},async handle(req,res,url,actor,payload,json){if(!url.pathname.startsWith('/api/backup'))return false;forbidden(actor.role==='admin','仅管理员可管理备份');json(res,503,{error:'备份组件暂不可用，请核查备份目录权限；不影响业务资料'});return true;}};}
 const lifecycle=createLifecycle({reviewer:()=>context.getStore()?.username||'team',store:workflow.store,mail:workflow.mail,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,key:process.env.LARK_APP_SECRET||password||'local-workflow-development',baseURL:process.env.PUBLIC_BASE_URL||process.env.RENDER_EXTERNAL_URL,authorizeMutation:authorizeCurrent});
 hooks.authorize=authorizeCurrent;hooks.confirmed=lifecycle.confirmed;hooks.issued=lifecycle.issued;
 const searchService=createSearchProvider({store:workflow.store,checkActor,secret:process.env.LARK_APP_SECRET||password,envKey:process.env.BRAVE_SEARCH_API_KEY||''});
@@ -124,6 +128,8 @@ const server=http.createServer(async(req,res)=>{
   if(req.method==='POST'&&url.pathname.startsWith('/api/')){forbidden(new URL(req.headers.origin||'https://invalid').host===req.headers.host,'禁止跨站修改');let bytes=0;const chunks=[];for await(const chunk of req){bytes+=chunk.length;forbidden(bytes<=2*1024*1024,'请求过长');chunks.push(chunk);}const buffer=Buffer.concat(chunks);try{payload=JSON.parse(buffer.toString())}catch{throw Object.assign(Error('请求格式错误'),{status:400})}req[Symbol.asyncIterator]=()=>Readable.from([buffer])[Symbol.asyncIterator]();}
   if(url.pathname==='/discovery-helper.zip'){forbidden(actor.role==='admin'||actor.role==='owner','查阅账号不能使用资料卡采集助手');if(req.method!=='GET'){json(res,405,{error:'不支持该请求'});return;}sendPrepared(req,res,discoveryHelper,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename=itea-profile-card-helper.zip','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return;}
   if(url.pathname==='/api/me'){json(res,200,{username:actor.username,role:actor.role,owner:actor.owner,contactVisible:actor.role!=='viewer',canExport:actor.role!=='viewer'});return;}
+  if(req.method==='GET'&&url.pathname==='/api/backup/authorize-helper'){forbidden(actor.role==='admin','仅管理员可管理备份');sendPrepared(req,res,prepareAsset(readFileSync(resolve(root,'tools/itea-google-drive-authorize.ps1'))),{'Content-Type':'text/plain; charset=utf-8','Content-Disposition':'attachment; filename=itea-google-drive-authorize.ps1','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return;}
+  if(await backups.handle(req,res,url,actor,payload,json))return;
   if(['/project-report','/api/reports/project'].includes(url.pathname)){
    forbidden(actor.role!=='viewer','查阅账号不能导出报告');
    if(req.method!=='GET'){json(res,405,{error:'报告仅支持读取'});return;}
@@ -193,4 +199,4 @@ const server=http.createServer(async(req,res)=>{
 });
 server.on('error',e=>{console.error(e.code==='EADDRINUSE'?'端口 '+port+' 已被占用，请停止原网站窗口后再启动，不要重复启动。':'网站启动失败：'+e.message);db.close();process.exit(1)});
 server.listen(port,host,()=>console.log('Creator Hub listening on http://'+host+':'+server.address().port));
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>server.close(()=>{db.close();process.exit(0)}));
+for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{backups.close();server.close(()=>{db.close();process.exit(0)})});

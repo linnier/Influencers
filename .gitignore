@@ -9,3 +9,9 @@ data/
 *.xls
 *.xlsx
 .DS_Store
+
+# Private backup artifacts and Google desktop authorization files
+*.iteabackup
+itea-google-drive-connection.json
+itea-backup-key-*.json
+client_secret_*.json
