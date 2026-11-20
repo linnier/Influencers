@@ -1,3 +1,4 @@
+import {createAdministratorAccess,checkBootstrapAccess} from './admin-transition.mjs';
 import {createMailImages} from './mail-images.mjs';
 import {createApplicationCorrection} from './application-correction.mjs';
 import {createCreatorMerge} from './creator-merge.mjs';
@@ -74,13 +75,14 @@ const getWorkflowState=async(options)=>{const [raw,rows]=await Promise.all([read
 const saveWorkflowState=async(state,revision)=>{
  if(lark){let rows;const result=await lark.updateInner(revision,async raw=>{rows=await workflow.store.rows();checkActor(context.getStore()||{role:'system'},rows);const active=visibleState(raw.state,rows);checkOwnerChanges(context.getStore()||{role:'system'},active,state);const full=mergeVisible(state,raw.state,rows);validate(full);return full;});return {...result,state:visibleState(result.state,rows)};}
  const raw=await readRaw(),rows=await workflow.store.rows();if(raw.revision!==revision)throw Object.assign(Error('资料已更新，请刷新后重新提交'),{status:409});const active=visibleState(raw.state,rows);checkOwnerChanges(context.getStore()||{role:'system'},active,state);const full=mergeVisible(state,raw.state,rows);validate(full);const result=await saveRaw(full,revision);return {...result,state:state}};
-function checkActor(actor,rows){if(actor.id==='bootstrap'||actor.role==='system')return;const live=rows.find(r=>r.kind==='user'&&r.id===actor.id);forbidden(live&&live.enabled!==false&&(live.version||1)===actor.version,'账号或权限已变化，请重新登录');}
+function checkActor(actor,rows){if(actor.role==='system')return;if(actor.id==='bootstrap'){checkBootstrapAccess(actor,rows);return;}const live=rows.find(r=>r.kind==='user'&&r.id===actor.id);forbidden(live&&live.enabled!==false&&(live.version||1)===actor.version,'账号或权限已变化，请重新登录');}
 async function authorizeCurrent(path,payload,rows,state){const actor=context.getStore();if(!actor)return;checkActor(actor,rows);if(actor.role==='admin')return;forbidden(actor.role==='owner');forbidden(!['/api/lifecycle/form','/api/lifecycle/intake-review'].includes(path),'全局入库设置由管理员管理');let project=payload?.project;const lookup=['/api/workflow/send','/api/workflow/delivery','/api/workflow/cancel'].includes(path)?'invite':path==='/api/workflow/review'?'application':path.endsWith('/report-review')?'report':path.includes('/notice-')?'notification':'';if(lookup)project=rows.find(r=>r.kind===lookup&&r.id===payload?.id)?.project;const current=state||(await getWorkflowState({rows})).state;forbidden(project&&current.projects.some(p=>p.id===project&&p.owner===actor.owner),'项目负责人已变化或无权操作此项目');}
 const validateView=state=>validate(state,{view:true}),hooks={};
 const mailImages=createMailImages({dataDir});
 workflow=createWorkflow({images:mailImages,lark,db,auth,validate:validateView,getState:getWorkflowState,saveState:saveWorkflowState,hooks});
-accountsManager=createAccounts({store:workflow.store});
-const management=createAdminManagement({store:workflow.store,accounts:accountsManager,readRaw,saveRaw,validate,checkActor});
+const administratorAccess=createAdministratorAccess({store:workflow.store});
+accountsManager=createAccounts({store:workflow.store,administratorAccess});
+const management=createAdminManagement({store:workflow.store,accounts:accountsManager,readRaw,saveRaw,validate,checkActor,administratorAccess});
 const lifecycle=createLifecycle({reviewer:()=>context.getStore()?.username||'team',store:workflow.store,mail:workflow.mail,getState:getWorkflowState,saveState:saveWorkflowState,validate:validateView,key:process.env.LARK_APP_SECRET||password||'local-workflow-development',baseURL:process.env.PUBLIC_BASE_URL||process.env.RENDER_EXTERNAL_URL,authorizeMutation:authorizeCurrent});
 hooks.authorize=authorizeCurrent;hooks.confirmed=lifecycle.confirmed;hooks.issued=lifecycle.issued;
 const searchService=createSearchProvider({store:workflow.store,checkActor,secret:process.env.LARK_APP_SECRET||password,envKey:process.env.BRAVE_SEARCH_API_KEY||''});
@@ -105,7 +107,7 @@ const server=http.createServer(async(req,res)=>{
   if(!auth.session(req)&&!(url.pathname.startsWith('/api/')&&auth.basic(req))){if(req.method==='GET'&&url.pathname==='/')redirect(res,'/login');else json(res,401,{error:'登录已过期，请重新登录'});return;}
   // Scripts contain no account data. A valid signed session can load them without scanning workflow rows for every asset; APIs still revalidate the principal.
   if(req.method==='GET'&&assets.has(url.pathname)){sendPrepared(req,res,assets.get(url.pathname),{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});return}
-  const session=auth.session(req),actor=session?await accountsManager.principal(session):{id:'bootstrap',username:'team',role:'admin',owner:''};
+  const session=auth.session(req),actor=await accountsManager.principal(session||{v:1,user:'team'});
   if(!actor){res.setHeader('Set-Cookie','itea_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0');json(res,401,{error:'账号已停用或权限已变化，请重新登录'});return;}
   await context.run(actor,async()=>{
   let payload;
