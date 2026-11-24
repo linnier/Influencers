@@ -25,7 +25,7 @@ export class WorkflowStore{
  }
 
  async visibilityRows({force=false}={}){
-  const select=rows=>rows.filter(r=>r.kind==='trash'||r.kind==='creator-merge');
+  const select=rows=>rows.filter(r=>r.kind==='trash'||r.kind==='creator-merge'||r.kind==='project-team');
   if(!this.lark||this.visibilityFiltersUnsupported)return select(await this.rows({coalesce:true,browse:true,force}));
   if(force&&this.visibilityFlight?.epoch===this.rowsEpoch&&this.visibilityFlight.providerEpoch===(this.lark.readEpoch||0))return structuredClone(await this.visibilityFlight.promise);
   if(force)this.rowsEpoch++;
@@ -34,7 +34,7 @@ export class WorkflowStore{
   if(!force&&valid(this.visibilityCache)&&this.visibilityCache.until>started)return structuredClone(this.visibilityCache.rows);
   let flight=this.visibilityFlight,ownsFlight=false;
   if(force||!valid(flight)){
-   const promise=(async()=>{const path=await this.path(false);if(!path)return [];const filter='OR(CurrentValue.[数据].contains('+JSON.stringify('"trash"')+'),CurrentValue.[数据].contains('+JSON.stringify('"creator-merge"')+'))';
+   const promise=(async()=>{const path=await this.path(false);if(!path)return [];const filter='OR(CurrentValue.[数据].contains('+JSON.stringify('"trash"')+'),CurrentValue.[数据].contains('+JSON.stringify('"creator-merge"')+'),CurrentValue.[数据].contains('+JSON.stringify('"project-team"')+'))';
     try{return select(this.decodeRows(await this.lark.list(path+'/records?filter='+encodeURIComponent(filter))));}
     catch(e){if((e.status===400&&/Lark请求参数错误/.test(e.message))||/Lark接口失败（1254018）/.test(e.message)){this.visibilityFiltersUnsupported=true;return select(await this.rows({coalesce:true,browse:true,force}));}throw e;}
    })();flight={epoch,providerEpoch,promise};this.visibilityFlight=flight;ownsFlight=true;
@@ -51,7 +51,7 @@ export class WorkflowStore{
   catch(e){if((e.status===400&&/Lark请求参数错误/.test(e.message))||/Lark接口失败（1254018）/.test(e.message)){this.settingsFiltersUnsupported=true;return select(await this.rows({coalesce:true}));}throw e;}
  }
  async managementRows(){
-  const kinds=['user','trash','management-audit','builtin-account-policy'],select=rows=>rows.filter(r=>kinds.includes(r.kind));
+  const kinds=['project-team','user','trash','management-audit','builtin-account-policy'],select=rows=>rows.filter(r=>kinds.includes(r.kind));
   if(!this.lark||this.managementFiltersUnsupported)return select(await this.rows({coalesce:true}));
   const epoch=this.rowsEpoch,providerEpoch=this.lark.readEpoch||0;let flight=this.managementFlight,ownsFlight=false;
   if(!flight||flight.epoch!==epoch||flight.providerEpoch!==providerEpoch){
@@ -61,7 +61,7 @@ export class WorkflowStore{
  }
  async invitationRows({project='',force=false}={}){
   if(typeof project!=='string'||project.length>80||/[\r\n]/.test(project))throw new LarkError('项目参数无效',400);
-  const kinds=['invite','application','issue','issue-completion','report','offer-scheme','project-selection','cooperation-agreement'],select=rows=>rows.filter(r=>r.id==='MAIL_AUTH'||kinds.includes(r.kind)&&(!project||r.project===project));
+  const kinds=['project-team','invite','application','issue','issue-completion','report','offer-scheme','project-selection','cooperation-agreement'],select=rows=>rows.filter(r=>r.id==='MAIL_AUTH'||kinds.includes(r.kind)&&(!project||r.project===project));
   if(!this.lark||this.invitationFiltersUnsupported)return select(await this.rows({coalesce:true,browse:true,force}));
   this.invitationCache??=new Map();this.invitationFlights??=new Map();
   if(force)this.rowsEpoch++;
