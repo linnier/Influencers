@@ -44,7 +44,7 @@ const discoveryHelper=prepareAsset(readFileSync(resolve(root,'public/discovery-h
 const reportHTML=prepareAsset(readFileSync(resolve(root,'public/project-report.html')));
 const html=prepareAsset(readFileSync(resolve(root,'public/index.html'))),loginHTML=prepareAsset(readFileSync(resolve(root,'public/login.html'))),loginJS=prepareAsset(readFileSync(resolve(root,'public/login.js')));
 function redirect(res,to){res.writeHead(303,{'Location':to,'Cache-Control':'no-store'});res.end();}
-const assets=new Map(['/backup-ui.js','/creator-discovery.js','/project-report-core.js','/project-report-excel.js','/project-report-ui.js','/cooperation-status.js','/creator-tags.js','/state-changes.js','/mail-templates.js','/mail-design.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,prepareAsset(readFileSync(resolve(root,'public'+path)))]));
+const assets=new Map(['/cooperation-offers.js','/project-offers-ui.js','/backup-ui.js','/creator-discovery.js','/project-report-core.js','/project-report-excel.js','/project-report-ui.js','/cooperation-status.js','/creator-tags.js','/state-changes.js','/mail-templates.js','/mail-design.js','/bulk-core.js','/bulk-ui.js','/finance.js','/creator-import.js','/project-workflow.js','/post-links.js','/multi-import.js','/invite-workflow.js','/lifecycle-ui.js','/ui-preferences.js','/admin-ui.js','/vendor/xlsx.full.min.js'].map(path=>[path,prepareAsset(readFileSync(resolve(root,'public'+path)))]));
 const stages=['已报名','筛选中','沟通中','已确认合作','执行中','已完成','未选中','已取消'];
 function requireThat(ok,msg){if(!ok)throw Object.assign(Error(msg),{status:400})}
 function text(v,max=160){return typeof v==='string'&&v.length<=max}
@@ -82,7 +82,7 @@ function checkActor(actor,rows){if(actor.role==='system')return;if(actor.id==='b
 async function authorizeCurrent(path,payload,rows,state){const actor=context.getStore();if(!actor)return;checkActor(actor,rows);if(actor.role==='admin')return;forbidden(actor.role==='owner');forbidden(!['/api/lifecycle/form','/api/lifecycle/intake-review'].includes(path),'全局入库设置由管理员管理');let project=payload?.project;const lookup=['/api/workflow/send','/api/workflow/delivery','/api/workflow/cancel'].includes(path)?'invite':path==='/api/workflow/review'?'application':path.endsWith('/report-review')?'report':path.includes('/notice-')?'notification':'';if(lookup)project=rows.find(r=>r.kind===lookup&&r.id===payload?.id)?.project;const current=state||(await getWorkflowState({rows})).state;forbidden(project&&current.projects.some(p=>p.id===project&&p.owner===actor.owner),'项目负责人已变化或无权操作此项目');}
 const validateView=state=>validate(state,{view:true}),hooks={};
 const mailImages=createMailImages({dataDir});
-workflow=createWorkflow({images:mailImages,lark,db,auth,validate:validateView,getState:getWorkflowState,saveState:saveWorkflowState,hooks});
+workflow=createWorkflow({getActor:()=>context.getStore(),images:mailImages,lark,db,auth,validate:validateView,getState:getWorkflowState,saveState:saveWorkflowState,hooks});
 const administratorAccess=createAdministratorAccess({store:workflow.store});
 accountsManager=createAccounts({store:workflow.store,administratorAccess});
 const management=createAdminManagement({store:workflow.store,accounts:accountsManager,readRaw,saveRaw,validate,checkActor,administratorAccess});

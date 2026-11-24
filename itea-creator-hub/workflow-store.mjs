@@ -44,9 +44,9 @@ export class WorkflowStore{
   finally{if(ownsFlight&&this.visibilityFlight===flight)this.visibilityFlight=null;}
  }
  async reminderSettingsRows(){
-  const select=rows=>rows.filter(r=>r.kind==='settings');
+  const select=rows=>rows.filter(r=>r.kind==='settings'||['application','cooperation-agreement'].includes(r.kind)&&r.status==='已确认合作'&&r.reward?.publishDeadline);
   if(!this.lark||this.settingsFiltersUnsupported)return select(await this.rows({coalesce:true}));
-  const path=await this.path(false);if(!path)return [];const filter='CurrentValue.[数据].contains('+JSON.stringify('"settings"')+')';
+  const path=await this.path(false);if(!path)return [];const contains=v=>'CurrentValue.[数据].contains('+JSON.stringify(JSON.stringify(v))+')',filter='OR('+contains('settings')+',AND(OR('+contains('application')+','+contains('cooperation-agreement')+'),CurrentValue.[数据].contains("publishDeadline")))';
   try{return select(this.decodeRows(await this.lark.list(path+'/records?filter='+encodeURIComponent(filter))));}
   catch(e){if((e.status===400&&/Lark请求参数错误/.test(e.message))||/Lark接口失败（1254018）/.test(e.message)){this.settingsFiltersUnsupported=true;return select(await this.rows({coalesce:true}));}throw e;}
  }
@@ -61,7 +61,7 @@ export class WorkflowStore{
  }
  async invitationRows({project='',force=false}={}){
   if(typeof project!=='string'||project.length>80||/[\r\n]/.test(project))throw new LarkError('项目参数无效',400);
-  const kinds=['invite','application','issue','issue-completion','report'],select=rows=>rows.filter(r=>r.id==='MAIL_AUTH'||kinds.includes(r.kind)&&(!project||r.project===project));
+  const kinds=['invite','application','issue','issue-completion','report','offer-scheme','project-selection','cooperation-agreement'],select=rows=>rows.filter(r=>r.id==='MAIL_AUTH'||kinds.includes(r.kind)&&(!project||r.project===project));
   if(!this.lark||this.invitationFiltersUnsupported)return select(await this.rows({coalesce:true,browse:true,force}));
   this.invitationCache??=new Map();this.invitationFlights??=new Map();
   if(force)this.rowsEpoch++;
