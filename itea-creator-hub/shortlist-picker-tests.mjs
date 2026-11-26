@@ -1,0 +1,25 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {JSDOM,VirtualConsole} from 'jsdom';
+const errors=[],vc=new VirtualConsole();vc.on('jsdomError',e=>errors.push(e.message));
+const dom=new JSDOM('<main><button data-offer-add>Add</button></main>',{url:'https://creator.test',runScripts:'dangerously',virtualConsole:vc}),w=dom.window,d=w.document;
+const people=[{id:'multi',name:'Multi',tag:'生活方式',region:'SG'},{id:'unknown',name:'Unknown',tag:'旅行',region:'MY'},{id:'zero',name:'Zero',tag:'美食',region:'SG'},{id:'xss',name:'<img src=x onerror=alert(1)>',tag:'测试',region:'SG'},...Array.from({length:125},(_,i)=>({id:'p'+i,name:'Creator '+i,tag:'校园',region:'SG'}))];
+const accounts=[{person:'multi',platform:'Instagram',handle:'multi.ig',url:'https://instagram.com/multi.ig/',fans:12000},{person:'multi',platform:'TikTok',handle:'multi.tt',url:'https://www.tiktok.com/@multi.tt',fans:120000},{person:'unknown',platform:'Instagram',handle:'unknown',url:'',fans:null},{person:'zero',platform:'Instagram',handle:'zero',url:'https://instagram.com/zero/',fans:0},{person:'xss',platform:'Instagram',handle:'bad<script>',url:'javascript:alert(1)',fans:500},...Array.from({length:125},(_,i)=>({person:'p'+i,platform:'Instagram',handle:'student'+i,url:'https://instagram.com/student'+i+'/',fans:50000+i}))];
+Object.assign(w,{people,accounts,CooperationOffers:{},AdminUI:{me:()=>({role:'admin'})},render:()=>{},notify:()=>{}});
+let submitted=null;w.fetch=async(path,opt)=>{if(opt?.method==='POST'){submitted=JSON.parse(opt.body);return {ok:true,json:async()=>({ok:true})};}return {ok:true,json:async()=>({schemes:[],selections:[]})};};
+w.eval(readFileSync('public/project-offers-ui.js','utf8'));const p={id:'P',currency:'SGD',owner:'Amy'};
+await w.ProjectOffersUI.load(p);w.ProjectOffersUI.mount(p);d.querySelector('[data-offer-add]').click();await new Promise(r=>setTimeout(r,0));
+const q=s=>d.querySelector(s),set=(s,v,event='input')=>{q(s).value=v;q(s).dispatchEvent(new w.Event(event,{bubbles:true}));},click=s=>q(s).click(),waitQuery=()=>new Promise(r=>setTimeout(r,150));
+try{
+ assert.equal(d.querySelectorAll('[data-pick]').length,50);assert.match(q('[data-picker-count]').textContent,/匹配 129 位/);assert.equal(q('[data-confirm]').disabled,true);assert.equal(q('[data-picker-list] img'),null);assert.equal(q('[data-pick=xss]').closest('tr').querySelector('a'),null);
+ set('[data-picker-platform]','Instagram','change');set('[data-picker-min]','100000');assert.equal(d.querySelectorAll('[data-pick]').length,0,'TikTok fans cannot qualify the Instagram account');
+ set('[data-picker-platform]','TikTok','change');assert.equal(d.querySelectorAll('[data-pick]').length,1);assert.match(q('[data-picker-list]').textContent,/120,000/);assert.equal(q('[data-picker-list] a').rel,'noopener noreferrer');click('[data-pick=multi]');
+ click('[data-picker-reset]');set('[data-picker-query]','HTTPS://WWW.INSTAGRAM.COM/multi.ig/?test=1');await waitQuery();assert.equal(d.querySelectorAll('[data-pick]').length,1);assert.match(q('[data-picker-count]').textContent,/已选 1 位/);
+ click('[data-picker-reset]');set('[data-picker-min]','0');set('[data-picker-max]','0');assert.equal(d.querySelectorAll('[data-pick]').length,1);assert(q('[data-pick=zero]'),'real zero is retained; unknown fans excluded');click('[data-pick=zero]');
+ set('[data-picker-min]','100');set('[data-picker-max]','1');assert(!q('[data-picker-error]').hidden);assert(q('[data-confirm]').disabled);
+ click('[data-picker-reset]');click('[data-picker-selected-only]');assert.equal(d.querySelectorAll('[data-pick]').length,2);assert(q('[data-pick=multi]').checked&&q('[data-pick=zero]').checked);click('[data-picker-selected-only]');
+ set('[data-picker-query]','校园');await waitQuery();assert.match(q('[data-picker-count]').textContent,/匹配 125 位/);click('[data-picker-next]');assert(q('[data-pick=p50]'),'previously inaccessible matches after first page can be selected');click('[data-pick=p50]');click('[data-picker-next]');assert(q('[data-pick=p124]'));click('[data-pick=p124]');click('[data-picker-prev]');assert(q('[data-pick=p50]').checked);click('[data-picker-prev]');assert.equal(d.querySelectorAll('[data-pick]').length,50);
+ click('[data-picker-all]');click('[data-picker-next]');click('[data-picker-all]');assert.match(q('[data-picker-count]').textContent,/已选 100 位/);click('[data-picker-selected-only]');assert.match(q('[data-picker-count]').textContent,/已选 100 位/);
+ click('[data-confirm]');await new Promise(r=>setTimeout(r,10));assert.equal(submitted.people.length,100);assert.equal(new Set(submitted.people).size,100);assert(submitted.people.includes('p124'));assert.equal(submitted.project,'P');assert(submitted.versions);assert.equal(q('#projectOfferModal'),null);assert.deepEqual(errors,[]);
+ console.log('PASS shortlist picker: platform/account fan matching, profile-link search/safe links, real zero vs unknown, invalid ranges, selection across filters/pages, matches beyond100, 100-person cap, escaped content and unchanged add API.');
+}finally{dom.window.close();}

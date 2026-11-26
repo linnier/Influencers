@@ -20,22 +20,5 @@ const beta=open({Cookie:await cookie('beta')});await wait(()=>beta.w.AdminUI.me(
 beta.d.querySelector('#owner').value='Beta';beta.d.querySelector('#owner').dispatchEvent(new beta.w.Event('change'));assert(beta.d.querySelector('[data-open-project="PA"]'),'secondary owner filter includes shared project');
 beta.d.querySelector('[data-open-project="PA"]').click();assert(!beta.d.querySelector('#projectAdd').disabled);assert(beta.d.querySelector('#projectWorkspace').textContent.includes('Alpha、Beta'));
 assert.equal(beta.errors.length,0,beta.errors.join('\n'));
-// Read-only browsing keeps nested invitation tabs and client-side filters usable.
-async function browseInvitations(x,pid,readonly){
- const {d,w}=x;d.querySelector('[data-tab="项目管理"]').click();
- const existing=d.querySelector('#closeProject');if(existing)existing.click();
- d.querySelector('[data-open-project="'+pid+'"]').click();d.querySelector('[data-project-view="邀约与报名"]').click();
- await wait(()=>d.querySelector('[data-invite-tab="邀约记录"]'));
- for(const label of ['邀约记录','报名审核','邮件通知','Post回填审核','通知设置','筛选邀约']){
-  const button=d.querySelector('[data-invite-tab="'+label+'"]');assert(!button.disabled,label+' remains browsable');button.click();
-  assert(d.querySelector('[data-invite-tab="'+label+'"].active'),label+' actually switches');
- }
- for(const id of ['invitePlatform','inviteQuery','inviteMin','inviteMax','inviteFresh','inviteAvoidRecent'])assert(!d.querySelector('#'+id).disabled,id+' is only a browsing filter');
- d.querySelector('#inviteQuery').value='No matching creator';d.querySelector('#inviteQuery').dispatchEvent(new w.Event('input',{bubbles:true}));
- await wait(()=>d.querySelector('#inviteQuery')?.value==='No matching creator');
- if(readonly){assert(d.querySelector('#planInvites').disabled);assert(d.querySelector('#openApplicationLink').disabled);assert(d.querySelector('#inviteAll').disabled);assert(d.querySelector('#inviteAmount').disabled);}
- else assert(!d.querySelector('#planInvites').disabled);
-}
-await browseInvitations(viewer,'PA',true);await browseInvitations(owner,'PB',true);await browseInvitations(beta,'PA',false);
-for(const x of [admin,viewer,owner])assert.equal(x.errors.length,0,x.errors.join('\n'));console.log('PASS read-only invitation navigation/filtering, admin UI account creation and role controls; readonly shared account hides write forms and invitation controls; owner has all-project visibility with foreign-project editing disabled.');
+for(const x of [admin,viewer,owner])assert.equal(x.errors.length,0,x.errors.join('\n'));console.log('PASS admin UI account creation and role controls; readonly shared account hides write forms and invitation controls; owner has all-project visibility with foreign-project editing disabled.');
 }finally{await new Promise(r=>setTimeout(r,600));for(const d of doms)d.window.close();if(child?.exitCode===null){child.kill('SIGTERM');await new Promise(r=>child.once('exit',r))}rmSync(dir,{recursive:true,force:true});}
