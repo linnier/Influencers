@@ -30,11 +30,12 @@ export function createProjectOffers({store,getState,actor=()=>null,authorizeMuta
     check(!rows.some(r=>r.kind==='offer-scheme'&&r.project===p.id&&r.id!==id&&r.name===v.name.trim()),'当前项目已有同名方案');
     const offer=clean(v.offer,defaults),saved=await store.put({id,sourceId:v.id,kind:'offer-scheme',project:p.id,name:v.name.trim(),offer,version:(old?.version||0)+1,created:old?.created||at,updated:at,by},{rows});json(res,200,{ok:true,scheme:saved});return;
    }
-   check(['add','apply','personal','remove'].includes(path),'操作不存在',404);check(Array.isArray(v.people)&&v.people.length>=1&&v.people.length<=100&&new Set(v.people).size===v.people.length,'请选择1至100位不同达人');
+   check(['add','apply','personal','remove','progress'].includes(path),'操作不存在',404);check(Array.isArray(v.people)&&v.people.length>=1&&v.people.length<=100&&new Set(v.people).size===v.people.length,'请选择1至100位不同达人');
    check(v.people.every(id=>state.people.some(p=>p.id===id)),'达人不存在或已移入回收站');const expected=v.versions||{};
    const scheme=path==='apply'?rows.find(r=>r.kind==='offer-scheme'&&r.project===p.id&&r.id===v.scheme):null;
    if(path==='apply')check(scheme&&scheme.version===v.schemeVersion,'方案已变化，请重新核对',409);
    if(path==='personal')check(v.people.length===1,'个人权益请逐位修改');if(path==='apply')check(typeof v.replacePersonal==='boolean'&&v.confirm===true,'请先核对应用范围');
+   if(path==='progress')check(typeof v.progress==='string'&&core.progressStates.includes(v.progress),'跟进状态无效');
    const updates=[],creates=[],skipped=[];
    for(const person of v.people){
     const id=key('selection',p.id,person),old=rows.find(r=>r.id===id);check((old?.version||0)===(expected[person]||0),'预选资料已变化，请刷新后核对',409);
@@ -42,12 +43,12 @@ export function createProjectOffers({store,getState,actor=()=>null,authorizeMuta
     check(!rows.some(r=>r.kind==='invite'&&r.project===p.id&&r.person===person&&CooperationStatus.blocksInvitation(r,rows)),'该达人已进入邀约流程，请在邀约记录或合作记录中调整');
     if(path==='add'&&old?.status==='预选'){skipped.push(person);continue;}
     if(path==='apply'&&old?.status==='预选'&&old.personalized&&!v.replacePersonal){skipped.push(person);continue;}
-    const offer=path==='add'?(old?.offer||{type:'pending',amount:null,vouchers:0}):path==='remove'?old?.offer:clean(path==='apply'?scheme.offer:v.offer,defaults);
-    if(path==='remove')check(old?.status==='预选','预选记录已变化',409);
-    const record={...old,id,kind:'project-selection',project:p.id,person,offer,status:path==='remove'?'已移出':'预选',personalized:path==='personal'?true:path==='apply'?false:old?.personalized||false,schemeId:path==='apply'?scheme.id:old?.schemeId||'',schemeName:path==='apply'?scheme.name:old?.schemeName||'',schemeVersion:path==='apply'?scheme.version:old?.schemeVersion||0,version:(old?.version||0)+1,created:old?.created||at,updated:at,by};
+    const offer=path==='add'?(old?.offer||{type:'pending',amount:null,vouchers:0}):['remove','progress'].includes(path)?old?.offer:clean(path==='apply'?scheme.offer:v.offer,defaults);
+    if(['remove','progress'].includes(path))check(old?.status==='预选','预选记录已变化',409);
+    const record={...old,...(path==='progress'?{progress:v.progress,progressBy:by,progressUpdated:at}:{}),id,kind:'project-selection',project:p.id,person,offer,status:path==='remove'?'已移出':'预选',personalized:path==='personal'?true:path==='apply'?false:old?.personalized||false,schemeId:path==='apply'?scheme.id:old?.schemeId||'',schemeName:path==='apply'?scheme.name:old?.schemeName||'',schemeVersion:path==='apply'?scheme.version:old?.schemeVersion||0,version:(old?.version||0)+1,created:old?.created||at,updated:at,by};
     (old?updates:creates).push(record);
    }
-   await store.putMany(creates,{existingRows:rows});await store.updateMany(updates,{existingRows:rows});json(res,200,{ok:true,updated:creates.length+updates.length,skipped});
+   await store.putMany(creates,{existingRows:rows});await store.updateMany(updates,{existingRows:rows});json(res,200,{ok:true,updated:creates.length+updates.length,skipped,...(path==='progress'?{selections:updates.map(r=>({...r,phase:'预选'}))}:{})});
   });return true;
  }
  return {handle};

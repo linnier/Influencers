@@ -1,4 +1,5 @@
 (function(root){'use strict';
+const progressStates=['','已询价','洽谈中','权益确认','高意向合作'];
 const types={paid:'付费博主',mutual:'互惠博主',pending:'待商议'},fields=['shootStart','shootEnd','publishStart','publishEnd'];
 const validDate=v=>typeof v==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(v)&&Number.isFinite(Date.parse(v+'T00:00:00Z'))&&new Date(v+'T00:00:00Z').toISOString().slice(0,10)===v;
 const check=(v,m)=>{if(!v)throw Error(m);};
@@ -40,5 +41,5 @@ function quote(raw,r,currency){
 }
 function publicReward(r){const out={...r};for(const k of ['estimate','benefitCost','note'])delete out[k];return out;}
 function summary(r,currency){return (types[r.type]||'合作')+' · '+(r.feeMode==='quote'&&r.amount==null?'报名报价':r.amount==null?'费用待定':currency+' '+r.amount.toFixed(2))+' · '+r.vouchers+' 张券';}
-root.CooperationOffers={types,fields,validDate,clean,benefits,settings,paidBody,quote,publicReward,summary};
+root.CooperationOffers={types,progressStates,fields,validDate,clean,benefits,settings,paidBody,quote,publicReward,summary};
 })(globalThis);
