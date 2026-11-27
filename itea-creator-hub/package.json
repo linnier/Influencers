@@ -1,6 +1,6 @@
 {
   "name": "creator-collaboration-hub",
-  "version": "2.7.8",
+  "version": "2.7.9",
   "private": true,
   "type": "module",
   "engines": {
@@ -59,6 +59,7 @@
     "test:discovery-search": "node discovery-search-tests.mjs && node discovery-search-ui-tests.mjs",
     "test:discovery": "node discovery-tests.mjs && node discovery-ui-tests.mjs && node discovery-access-tests.mjs",
     "test:mail-design": "node mail-design-tests.mjs",
+    "test:shortlist-filter": "node shortlist-filter-tests.mjs",
     "test:shortlist-progress": "node shortlist-progress-tests.mjs && node shortlist-save-ui-tests.mjs",
     "test:shortlist-export": "node shortlist-export-tests.mjs",
     "test:shortlist-picker": "node shortlist-picker-tests.mjs",
